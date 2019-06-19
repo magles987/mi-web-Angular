@@ -1,0 +1,59 @@
+<div class="container">
+  <h1>Completa</h1>
+  <table>
+    <thead>
+      <th>
+        <tr>
+          <th>Nombre</th>
+          <th>Categoria</th>
+          <th>Precio</th>
+        </tr>
+      </th>
+    </thead>
+    <tbody>
+      <tr *ngFor="let item of this.productos">
+        <td>{{item.nombre}}</td>
+        <td>{{item.categoria}}</td>
+        <td>{{item.precio}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<br/>
+<div class="container">
+  <h1>Filtro</h1>
+  <table>
+    <thead>
+      <th>
+        <tr>
+          <th>Nombre</th>
+          <th>Categoria</th>
+          <th>Precio</th>
+        </tr>
+      </th>
+    </thead>
+    <tbody>
+      <tr *ngFor="let item of this.productosFiltrados">
+        <td>{{item.nombre}}</td>
+        <td>{{item.categoria}}</td>
+        <td>{{item.precio}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<br/>
+<div class="container">
+  <form [formGroup]="this.formProductos" (ngSubmit)="enviar()">
+
+    <label for="nombre">Nombre:</label>
+    <input name="nombre" type="text" formControlName="nombre"  #nombre>
+    <label for="categoria">Categoria</label>
+    <input name="categoria" type="text" formControlName="categoria" #categoria >
+    <label for="precio">Precio</label>
+    <input name="precio" type="text" formControlName="precio" #precio >
+    
+    <input type="submit" value="guardar">
+
+  </form>
+</div>
+

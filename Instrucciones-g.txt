@@ -1,0 +1,52 @@
+Aqui se tendran instrucciones Globales de creacion y configuracion del proyecto
+
+==================================================================================
+==================================================================================
+Config. Firebase en angular (Basica) 14/0619
+
+1. Instalar modulos de firebase:
+comando para Angular 8 (14/06/19):
+npm install --save firbase @angular/fire
+
+2. mienmtras instala crear la base de datos en    
+ir a https://console.firebase.google.com/   
+seleccionar proyecto
+ir al menu database
+en la pestaña reglas permitir lectura y escritura 
+de la siguiente manera:
+{
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}
+(mas adelante se configuran los permisos de acuerdo al nivel de seguridad que deseo)
+
+3. configurar las credenciales y parametros para 
+conectar con el servidor.
+ir a  https://console.firebase.google.com/    
+seleccionar el proyecto
+ir a configuracion proyecto (el engranaje) y seleccionar la aplicacion web
+copiar el codigo en la seccion firebase SDK snippet en la opcion configuracion 
+Importante: solo seleccionar el contenido de la constante (la variable)
+que es algo asi:
+    apiKey: "AIzaSyB5htWVKU09imVbTR9bz23iAQsFFhXDQ7g",
+    authDomain: "prueba1-87d2f.firebaseapp.com",
+    databaseURL: "https://prueba1-87d2f.firebaseio.com",
+    projectId: "prueba1-87d2f",
+    storageBucket: "prueba1-87d2f.appspot.com",
+    messagingSenderId: "567889637995",
+    appId: "1:567889637995:web:a2bcd830f0cc5ad5"
+
+4. pegar la configuracion en el archivo   src/environment/environment.ts  
+con el atributo o propiedad   firebase : {}
+(en el nuevo angular tambien se puede cargar esta configuracion directamente en 
+src/app/app.module.ts   crear una constante y ahi pegar los datos de configuracion)
+ejemplo:
+https://stackblitz.com/edit/angular-1iment
+
+5. requerir los modulos de firebase en el modulo de angular en el que se desee usar
+(normalmente es en src/app/app.module.ts que es el global)
+
+==================================================================================
+==================================================================================
