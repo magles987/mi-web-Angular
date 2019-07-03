@@ -17,20 +17,13 @@ export class ProductosComponent implements OnInit {
 
   public productosFiltrados:Producto[];
 
+  public productosFiltradosDinamicos:Producto[];
+  public productoNombreFiltro$;
+  public productoPrecioFiltro$;
+  public productoRuedasFiltro$;
+
   constructor(private _ProductosServices:ProductosService) {
     
-  }
-
-  enviar(){
-    console.log(this.formProductos.value);
-    let d = this._ProductosServices.crearProducto(this.formProductos.value);
-    d.then(data=>{
-      console.log("Bien987: " + data);
-    })
-    .catch(err=>{
-      console.log(err);
-    })
-    this.formProductos.reset();
   }
 
   ngOnInit() {
@@ -46,17 +39,50 @@ export class ProductosComponent implements OnInit {
     this.formProductos = new FormGroup(formControls); 
     //================================================================
     //================================================================
-    //Descargar los datos de la bd
-    this._ProductosServices.leerProductos().subscribe((dataRes)=>{
-      this.productos = dataRes;
-    });
+    //Descargar los datos de la bd  
 
-    this._ProductosServices.leerProductosFiltro().subscribe((dataRes)=>{
-      this.productosFiltrados = dataRes;
-    });    
+    this.productoNombreFiltro$ = this._ProductosServices.productoNombreFiltro$;
+    this.productoPrecioFiltro$ = this._ProductosServices.productoPrecioFiltro$;
+    this.productoRuedasFiltro$ = this._ProductosServices.productoRuedasFiltro$;
+    
+    this._ProductosServices.leerProductosFiltroDinamico().subscribe((dataRes)=>{
+        this.productosFiltradosDinamicos = dataRes;
+    });
     //================================================================
 
-
   }
+
+  crear(){
+    console.log(this.formProductos.value);
+    let d = this._ProductosServices.crearProducto_set(this.formProductos.value);
+    d.then(data=>{
+      console.log("Bien987: " + data);
+    })
+    .catch(err=>{
+      console.log(err);
+    })
+    this.formProductos.reset();
+  }
+
+  crear_set(){
+    this._ProductosServices.crearProducto_set()
+    .then(data=>{
+      console.log("ya en el componente: " + data);
+    })
+    .catch(err=>{
+      console.log("tratar el erro en el componente " + err);
+    })
+  }
+
+  editar(){
+    this._ProductosServices.actualizarProducto()
+    .then(data=>{
+      console.log("EDITADO ya en el componente: " + data);
+    })
+    .catch(err=>{
+      console.log("EDITAR tratar el error en el componente " + err);
+    })
+  }
+
 
 }

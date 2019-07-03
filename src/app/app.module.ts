@@ -17,6 +17,7 @@ import { ReactiveFormsModule  } from '@angular/forms';
 import { ProductosComponent } from './sub-components/productos/productos.component';
 import { ProductosService } from './sub-components/productos/services/productos.service';
 
+
 @NgModule({
   declarations: [
     AppComponent,
@@ -28,7 +29,7 @@ import { ProductosService } from './sub-components/productos/services/productos.
     AngularFirestoreModule,
     AppRoutingModule,
     HttpClientModule,
-    ReactiveFormsModule
+    ReactiveFormsModule,
   ],
   providers: [
     ProductosService

@@ -1,5 +1,6 @@
+<br/>
 <div class="container">
-  <h1>Completa</h1>
+  <h1>Filtro Dinamico</h1>
   <table>
     <thead>
       <th>
@@ -7,53 +8,55 @@
           <th>Nombre</th>
           <th>Categoria</th>
           <th>Precio</th>
+          <th>Precio + imp</th>
         </tr>
       </th>
     </thead>
     <tbody>
-      <tr *ngFor="let item of this.productos">
+      <tr *ngFor="let item of this.productosFiltradosDinamicos">
         <td>{{item.nombre}}</td>
         <td>{{item.categoria}}</td>
         <td>{{item.precio}}</td>
+        <td>{{item.v_precioImpuesto}}</td>
       </tr>
     </tbody>
   </table>
 </div>
 <br/>
-<div class="container">
-  <h1>Filtro</h1>
-  <table>
-    <thead>
-      <th>
-        <tr>
-          <th>Nombre</th>
-          <th>Categoria</th>
-          <th>Precio</th>
-        </tr>
-      </th>
-    </thead>
-    <tbody>
-      <tr *ngFor="let item of this.productosFiltrados">
-        <td>{{item.nombre}}</td>
-        <td>{{item.categoria}}</td>
-        <td>{{item.precio}}</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+<h1>Filtro</h1>
+<input type="text" name="" #CampoFiltroNombre id="" value="">
+<input type="text" name="" #CampoFiltroPrecio id="" value="0">
+<input type="text" name="" #CampoFiltroRuedas id="" value="0">
+<br/>
+<button (click)="this.productoNombreFiltro$.next(CampoFiltroNombre.value)">actualizarfiltroDinamico-Nombre</button>
+<button (click)="this.productoNombreFiltro$.next()">actualizarfiltroDinamico-Nombre-(limpiar)</button>
+<br/>
+<button (click)="this.productoPrecioFiltro$.next(CampoFiltroPrecio.value)">actualizarfiltroDinamico-Precio</button>
+<button (click)="this.productoPrecioFiltro$.next()">actualizarfiltroDinamico-Precio-(limpiar)</button>
+<br/>
+<button (click)="this.productoRuedasFiltro$.next(CampoFiltroRuedas.value)">actualizarfiltroDinamico-Ruedas</button>
+<button (click)="this.productoRuedasFiltro$.next()">actualizarfiltroDinamico-Ruedas-(limpiar)</button>
 <br/>
 <div class="container">
-  <form [formGroup]="this.formProductos" (ngSubmit)="enviar()">
+  <form [formGroup]="this.formProductos" (ngSubmit)="crear()">
 
     <label for="nombre">Nombre:</label>
-    <input name="nombre" type="text" formControlName="nombre"  #nombre>
+    <input name="nombre" type="text" formControlName="nombre" #nombre>
     <label for="categoria">Categoria</label>
     <input name="categoria" type="text" formControlName="categoria" #categoria >
     <label for="precio">Precio</label>
     <input name="precio" type="text" formControlName="precio" #precio >
     
-    <input type="submit" value="guardar">
+    <input type="submit" value="crear">
+
+    <input type="">
 
   </form>
 </div>
 
+<br/>
+<br/>
+<button (click)="this.crear_set()">crear_set()</button>
+<br/>
+<br/>
+<button (click)="this.editar()">editar()</button>
