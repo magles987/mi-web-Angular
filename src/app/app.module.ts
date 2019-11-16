@@ -15,7 +15,7 @@ import { environment } from '../environments/environment';
 import { ReactiveFormsModule  } from '@angular/forms';
 
 import { ProductosComponent } from './sub-components/productos/productos.component';
-import { ProductosService } from './sub-components/productos/services/productos.service';
+import { ProductosService } from './services/firebase/productos/productos.service';
 
 
 @NgModule({

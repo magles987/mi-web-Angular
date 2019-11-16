@@ -1,4 +1,5 @@
 <br/>
+<h1>HOLA</h1>
 <div class="container">
   <h1>Filtro Dinamico</h1>
   <table>
@@ -13,7 +14,8 @@
       </th>
     </thead>
     <tbody>
-      <tr *ngFor="let item of this.productosFiltradosDinamicos">
+      <tr *ngFor="let item of this.listDocs">
+        <td>{{item._id}}</td>
         <td>{{item.nombre}}</td>
         <td>{{item.categoria}}</td>
         <td>{{item.precio}}</td>
@@ -22,23 +24,27 @@
     </tbody>
   </table>
 </div>
+
+<br/>
+<button (click)="this.paginarAnterior()">anterior</button>
+<button (click)="this.paginarSiguiente()">siguiente</button>
+<button (click)="this.paginarSiguienteFull()">paginarSiguienteFull</button>
 <br/>
 <h1>Filtro</h1>
 <input type="text" name="" #CampoFiltroNombre id="" value="">
 <input type="text" name="" #CampoFiltroPrecio id="" value="0">
 <input type="text" name="" #CampoFiltroRuedas id="" value="0">
 <br/>
-<button (click)="this.productoNombreFiltro$.next(CampoFiltroNombre.value)">actualizarfiltroDinamico-Nombre</button>
-<button (click)="this.productoNombreFiltro$.next()">actualizarfiltroDinamico-Nombre-(limpiar)</button>
 <br/>
-<button (click)="this.productoPrecioFiltro$.next(CampoFiltroPrecio.value)">actualizarfiltroDinamico-Precio</button>
-<button (click)="this.productoPrecioFiltro$.next()">actualizarfiltroDinamico-Precio-(limpiar)</button>
 <br/>
-<button (click)="this.productoRuedasFiltro$.next(CampoFiltroRuedas.value)">actualizarfiltroDinamico-Ruedas</button>
-<button (click)="this.productoRuedasFiltro$.next()">actualizarfiltroDinamico-Ruedas-(limpiar)</button>
+<h2>Filtro Path_id</h2>
+<!-- <p>{{this.productoPath_id.nombre}}  {{this.productoPath_id._id}}</p> -->
+<br/>
+<button (click)="this.Doc_Path_id$.next('Productos/000006-ba0f544bb2e38778')">getPath_id</button>
+
 <br/>
 <div class="container">
-  <form [formGroup]="this.formProductos" (ngSubmit)="crear()">
+  <form [formGroup]="this.formCrearOActualizar" (ngSubmit)="crear()">
 
     <label for="nombre">Nombre:</label>
     <input name="nombre" type="text" formControlName="nombre" #nombre>
@@ -60,3 +66,6 @@
 <br/>
 <br/>
 <button (click)="this.editar()">editar()</button>
+<br/>
+<br/>
+<button (click)="this.eliminar()">eliminar()</button>
