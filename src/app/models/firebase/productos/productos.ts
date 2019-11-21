@@ -69,11 +69,15 @@ export interface IMapA_misc{
 //personalizados como por ejemplo: 
 //filtroValores:{ rangoMaximo:number, rangoMinimo:number, etc }
 
-export interface IProducto$ extends IConfigFiltroLectura<IProducto, Producto, IProducto$>{
+export interface IQFiltro_Producto extends IConfigFiltroLectura<IProducto, Producto, IQFiltro_Producto>{
     //...aqui cualquier filtrado especial que se requiera...
     filtroValores?:{
         //...aqui colocar campos que almacenan valores para el filtro...
         // rangos, comparaciones y demas.
+        nombre:{
+            min:string; 
+            max?:string;
+        }
     };
 
 }
@@ -278,23 +282,25 @@ export class Producto_Util extends _Util implements IProducto {
     //          la vista o componente correspondiente
     public preLeerDocs(docs:Producto[] | Producto, v_utilesPreLeer:Iv_PreLeer_Productos):Producto[] | Producto{
 
-        if(Array.isArray(docs)){
-            docs = docs.map((doc)=>{
+        if(docs){
+            if(Array.isArray(docs)){
+                docs = docs.map((doc)=>{
+                    //================================================================
+                    //aqui todo lo referente a la modificacion de cada documento antes 
+                    //de devolverlo
+                    doc.v_precioImpuesto = ((doc.precio * v_utilesPreLeer.imp)/100) + doc.precio;
+                    //================================================================
+                    return doc;
+                });
+            }else{
                 //================================================================
                 //aqui todo lo referente a la modificacion de cada documento antes 
                 //de devolverlo
-                doc.v_precioImpuesto = ((doc.precio * v_utilesPreLeer.imp)/100) + doc.precio;
+                docs.v_precioImpuesto = ((docs.precio * v_utilesPreLeer.imp)/100) + docs.precio;
                 //================================================================
-                return doc;
-            });
-        }else{
-            //================================================================
-            //aqui todo lo referente a la modificacion de cada documento antes 
-            //de devolverlo
-            docs.v_precioImpuesto = ((docs.precio * v_utilesPreLeer.imp)/100) + docs.precio;
-            //================================================================
+            }
+    
         }
-
         //retornar doc ya formateado
         return docs;
     }

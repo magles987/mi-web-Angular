@@ -240,6 +240,40 @@ export class _Util {
         }
     }    
     //================================================================
+    //obtener llave para la condición del búsqueda limite mayor para
+    //campos string en firestore
+    public getLlaveFinBusquedaStrFirestore(llaveInicial:string):string{
+
+        let llaveFinal:string = llaveInicial.substring(0, llaveInicial.length-1);
+        let charIni:string = llaveInicial.charAt(llaveInicial.length-1);
+        let charFin:string;
+
+        //detectar los caracteres "estorbo" de mi hermoso idioma
+        if (/[ñÑáéíóúÁÉÍÓÚü]/.test(charIni)) {
+            charFin = charIni=="ñ" ? "o" : charIni; //--¿que pasa con ..ñó..?
+            charFin = charIni=="Ñ" ? "O" : charIni; //--¿que pasa con ..ÑÓ..?
+            charFin = charIni=="á" ? "b" : charIni;
+            charFin = charIni=="é" ? "f" : charIni;
+            charFin = charIni=="í" ? "j" : charIni;
+            charFin = charIni=="ó" ? "p" : charIni;
+            charFin = charIni=="ú" ? "v" : charIni;
+            charFin = charIni=="Á" ? "B" : charIni;
+            charFin = charIni=="É" ? "F" : charIni;
+            charFin = charIni=="Í" ? "J" : charIni;
+            charFin = charIni=="Ó" ? "P" : charIni;
+            charFin = charIni=="Ú" ? "V" : charIni;
+            charFin = charIni=="ü" ? "v" : charIni;
+        } else {
+            //para evitar recorrer todo el alfabeto y dígitos
+            //asignar el caracter siguiente (el Unicode de charIni + 1) para la búsqueda
+            charFin = String.fromCharCode(charIni.charCodeAt(0) + 1);       
+        }
+        //finalemente concatenar
+        llaveFinal = llaveFinal + charFin;    
+        return llaveFinal;
+    }
+    
+    //================================================================
 
 }
 //================================================================================================================================
@@ -317,12 +351,15 @@ export interface IConfigFiltroLectura<TIModelo, TModelo, TIFiltro> {
 
     query:(ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtro:TIFiltro)=>firebase.firestore.CollectionReference | firebase.firestore.Query;    
 
-    docValores?:TModelo;
+    isPaginar:boolean;
+    isPagReactivaFull:boolean;
     orden?:TIModelo;
     limite?:number;
+    docInicial:any; //es un any que en realidad es un snapshotDocument de firestore
+    //tipoInicioLectura?: "after" | "before";  
+    
+    docValores?:TModelo;
 
-    docInicial?:TModelo; 
-    tipoInicioLectura?: "after" | "before";  
 }
 
 //================================================================================================================================

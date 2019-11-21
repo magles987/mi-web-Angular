@@ -14,7 +14,7 @@
       </th>
     </thead>
     <tbody>
-      <tr *ngFor="let item of this.listDocs">
+      <tr *ngFor="let item of this.listProductos">
         <td>{{item._id}}</td>
         <td>{{item.nombre}}</td>
         <td>{{item.categoria}}</td>
@@ -28,7 +28,8 @@
 <br/>
 <button (click)="this.paginarAnterior()">anterior</button>
 <button (click)="this.paginarSiguiente()">siguiente</button>
-<button (click)="this.paginarSiguienteFull()">paginarSiguienteFull</button>
+<button (click)="this.consultarTODO()">consultarTODO</button>
+<button (click)="this.consultarNombre()">consultarNombre</button>
 <br/>
 <h1>Filtro</h1>
 <input type="text" name="" #CampoFiltroNombre id="" value="">
@@ -40,7 +41,7 @@
 <h2>Filtro Path_id</h2>
 <!-- <p>{{this.productoPath_id.nombre}}  {{this.productoPath_id._id}}</p> -->
 <br/>
-<button (click)="this.Doc_Path_id$.next('Productos/000006-ba0f544bb2e38778')">getPath_id</button>
+<!-- <button (click)="this.Doc_Path_id$.next('Productos/000006-ba0f544bb2e38778')">getPath_id</button> -->
 
 <br/>
 <div class="container">

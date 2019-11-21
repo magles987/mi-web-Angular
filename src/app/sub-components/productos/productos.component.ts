@@ -2,8 +2,8 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { FormControl, FormGroup } from "@angular/forms";
 import { Observable, observable, Subject, combineLatest, BehaviorSubject, Subscription, from } from 'rxjs';
 
-import { IProducto, IProducto$, Producto, Producto_Util, Iv_PreLeer_Productos } from '../../models/firebase/productos/productos';
-import { ProductosService } from '../../services/firebase/productos/productos.service';
+import { IProducto, IQFiltro_Producto, Producto, Iv_PreLeer_Productos } from '../../models/firebase/productos/productos';
+import { ProductosService, IProductos$, IProductoPath_Id$ } from '../../services/firebase/productos/productos.service';
 
 
 
@@ -16,129 +16,58 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   //================================================================
   //contenedor de documento para trabajo en plantilla
-  public Doc:Producto; 
+  public Producto:Producto; 
 
   //array de documentos obtenidos de la bd
   //de acuerdo a los filtros aplicados
-  public listDocs:Producto[];
+  public listProductos:Producto[];
 
-  public Docs_Path_Id:Producto | null;
-
-  //================================================================
-  //objeto de filtrado especial para observable
-  //contiene los filtros iniciales de consulta
-  //que se modificaran dinamicamente
-
-  public Docs$:BehaviorSubject<IProducto$>;
-  private _DocSuscription:Subscription;
-
-  public DocsPag$:BehaviorSubject<IProducto$>[];
-  private _DocsPagSuscription:Subscription[];
-
-  public UltimoDoc$:BehaviorSubject<IProducto$>;
-  private _UltimoDocSuscription:Subscription;
-  
-  public Doc_Path_id$:BehaviorSubject<string|null>; 
-  private _Doc_Path_id_Suscription:Subscription;
+  public Productos_Path_Id:Producto | null;
 
   //================================================================
-  //propiedades para la paginacion:
+  //manejadores de observables y configuraciones
+  // personalizadas para consultas en firestore
 
-  private _isPagReactivaFull:boolean;
-
-  public DocsIniciales:Producto[]; 
-  public numPaginaActual:number;
-  public limitePorPagina:number;
+  private Productos$:IProductos$;
+  private ProductoPath_Id$:IProductoPath_Id$;
 
   //================================================================
   //Campos del formulario para crear o editar documento
   public formCrearOActualizar:FormGroup; 
   //================================================================
   //
-  public model_util:Producto_Util;
   
   //================================================================================================================================
   constructor(private _ProductosServices:ProductosService) {
     //================================================================
     //preparar la inicializacion de objetos principales
-    this.Doc = new Producto();
+    this.Producto = new Producto();
 
-    this.listDocs = []; 
+    this.listProductos = []; 
 
-    this.DocsPag$ = [];
-    this._DocsPagSuscription = [];
+    this.Productos$ = {
+      behaviors : [],
+      suscriptions : []
+    };
 
-    this._isPagReactivaFull = true;
-
-    this.DocsIniciales = [null]; //el item inicial DEBE SER null
-    this.numPaginaActual =  0;
-    this.limitePorPagina = 4;
-
-    this.model_util = this._ProductosServices.model_Util;
-
+    this.ProductoPath_Id$ = {
+      behavior: null,
+      suscription:null
+    };
 
     //================================================================
     //configuracion inicial de filtrado 
 
-    // let configFiltroProductos:IProducto$ = {
-    //   query : this._ProductosServices.leerDocs,
-
-    //   docInicial : this.DocsIniciales[this.numPaginaActual],
-    //   orden : <IProducto> {_id : "asc"},
-    //   limite : this.limitePorPagina,
-    // }; 
-
-    let configFiltroProductos:IProducto$ = {
-      query : this._ProductosServices.leerNombre,
-
-
-      docInicial : this.DocsIniciales[this.numPaginaActual],
-      orden : <IProducto> {_id : "asc"},
-      limite : this.limitePorPagina,
-      docValores:<Producto>{nombre:"ba"}
-    }; 
-
-    if (this._isPagReactivaFull) {
-      this.configurarPagReactivaFull(this.numPaginaActual, configFiltroProductos);
-    } else {
-      this.configurarPagReactiva(configFiltroProductos);
-    }
-
-    this.UltimoDoc$= new BehaviorSubject<IProducto$>(<IProducto$>{
-      query : this._ProductosServices.leerUltimoDoc
-    });
-
-    this._UltimoDocSuscription = this._ProductosServices.leerDocsFiltro(this.UltimoDoc$).subscribe({
-      next:(docsRes)=>{
-
-        if(docsRes && docsRes.length > 0){
-          this._ProductosServices.ultimoIDDoc = docsRes[0]._id;
-        }else{
-          this._ProductosServices.ultimoIDDoc = (<Producto>{_id:this.model_util.generarIdVacio()})._id;
-        }
-      },
-      error:(err)=>{
-        this._ProductosServices.ultimoIDDoc = (<Producto>{_id:this.model_util.generarIdVacio()})._id;
-      }
-    });
-
+    let filtroProducto:IQFiltro_Producto = this.getFiltroProductosTodo();
+    this.Productos$ = this._ProductosServices.inicializarNuevaQueryDoc$(this.Productos$, filtroProducto, this.subNext_Productos, this.subError);
 
     //------------------------[EN TEST]------------------------
-    this.Doc_Path_id$ = new BehaviorSubject<string|null>(null); 
-    this._Doc_Path_id_Suscription = this._ProductosServices.leerDocPorPathId(this.Doc_Path_id$).subscribe({
-      next:(docRes)=>{
-        if(docRes){
-          this.Docs_Path_Id = <Producto>this.model_util.preLeerDocs(docRes, this.getDatosPreLeer());
-        }else{
-          this.Docs_Path_Id = null;
-        }
-      },
-      error:(err)=>{}
-    });    
+    this.ProductoPath_Id$ = this._ProductosServices.inicializarNuevaQueryDocPath_Id$(this.ProductoPath_Id$, this.subNext_ProductoPath_id, this.subError);
 
     //----------------------------------------------------------------
 
   }
+
   //================================================================================================================================
   //Hooks de componente angular:
   //================================================================================================================================
@@ -161,201 +90,87 @@ export class ProductosComponent implements OnInit, OnDestroy {
     //================================================================
     //desuscribirse de todos los observables
     
-    if (this._isPagReactivaFull == false) {
-      this._DocSuscription.unsubscribe();
-    } else {
-      for (let i = 0; i < this._DocsPagSuscription.length; i++) {
-        this._DocsPagSuscription[i].unsubscribe();        
-      }
-    }
-    this._UltimoDocSuscription.unsubscribe();
-    this._Doc_Path_id_Suscription.unsubscribe();
+    this._ProductosServices.unsubscribePrincipales(this.Productos$, this.ProductoPath_Id$);
     //================================================================
   }
-  //================================================================================================================================  
+
   //================================================================================================================================
-  //paginacion reactiva basica:
+  //declarar filtros (se debe usar metodo getters para poder crear
+  //objetos de filtrado independientes, tomando una base como referencia)
+  private getFiltroProductosTodo():IQFiltro_Producto{
+    return {
+      query : this._ProductosServices.queryTodosDocs,
+
+      isPaginar:true,
+      isPagReactivaFull:true,
+      docInicial : null,
+      limite : 4,      
+      orden : <IProducto> {_id : "asc"},
+    };
+  } 
+
+  private getFiltroProductosPorNombre():IQFiltro_Producto{
+    return {
+      query : this._ProductosServices.queryNombre,
+
+      isPaginar:true,
+      isPagReactivaFull:true,
+      docInicial : null,
+      limite : 4,      
+      orden : <IProducto> {nombre : "asc"},
+      
+      //docValores:<Producto>{nombre:"ba"}
+      filtroValores:{nombre:{min:"hu"}}
+    };
+  } 
+
+  //================================================================
+  //propiedades metodos de ejecucion next y error para las suscripciones
+  private subNext_Productos = (docRes:Producto[])=>{
+    let filtroDoc = this.Productos$.behaviors[this.Productos$.behaviors.length -1].getValue();
+    
+    this.listProductos = <Producto[]>this._ProductosServices.model_Util.preLeerDocs(docRes, this.getDatosPreLeer());   
+    
+    if (filtroDoc.isPagReactivaFull == false) {
+         //---lo que se requiera de paginacion reactiva estandar---
+    }else{
+      this.Productos$ = this._ProductosServices.adminMemoriaReactivaFull(this.Productos$);
+    }
+  
+  };
+
+  private subNext_ProductoPath_id = (docRes:Producto)=>{
+    this.Productos_Path_Id = <Producto>this._ProductosServices.model_Util.preLeerDocs(docRes, this.getDatosPreLeer());
+  };
+
+  private subError = (err:any)=>{
+
+  };
+  
+  //================================================================================================================================
+  //paginacion reactiva (se autogestiona de acuerdo a estandar o full):
 
   public paginarAnterior(){
-    if(this._isPagReactivaFull == false){
-      //================================================================
-      //determinar si es posible cargar una nueva pagina
-      if (this.listDocs.length > 0 && this.numPaginaActual > 0) {
-      //================================================================
-      //se recupera el filtro inicial del BehaviorSubject para tomarlo como base,
-      //luego se configura el idInicial con el que se va a solicitar la anterior pagina
-        const configFiltro = this.Docs$.getValue();
-        this.numPaginaActual--;
-        configFiltro.docInicial= this.DocsIniciales[this.numPaginaActual];
 
-        //se solicita por medio de next(), ya que no se requiere crear nuevos observadores  
-        this.Docs$.next(configFiltro);      
-      }
-    }
+    this.Productos$ = this._ProductosServices.paginarDocs(this.Productos$, this.listProductos, "previo");
   }
 
   public paginarSiguiente(){
-    //determina que tipo de paginacion se esta usando
-    if(this._isPagReactivaFull == false){
-      //================================================================
-      //determinar si es posible cargar una nueva pagina
-      if (this.listDocs.length == this.limitePorPagina) {
-      //================================================================
-      //se recupera el filtro inicial del BehaviorSubject para tomarlo como base,
-      // luego se configura el idInicial con el que se va a solicitar la siguiente pagina
-        let configFiltro = this.Docs$.getValue();
-        this.numPaginaActual++;
-        configFiltro.docInicial= this.DocsIniciales[this.numPaginaActual];
 
-        //se solicita por medio de next(), ya que no se requiere crear nuevos observadores
-        this.Docs$.next(configFiltro);      
-      }
-      
-    }
+    this.Productos$ =  this._ProductosServices.paginarDocs(this.Productos$,  this.listProductos, "siguiente", this.subNext_Productos, this.subError);
   }
 
-  private configurarPagReactiva(configFiltro:IProducto$){
-    //================================================================
-    //se define el Observable especial:
-    this.Docs$ = new BehaviorSubject<IProducto$>(configFiltro);
-    //================================================================
-    
-    this._DocSuscription =  this._ProductosServices.leerDocsFiltro(this.Docs$).subscribe({
-      next:(docsRes)=>{
 
-        if(docsRes && docsRes.length > 0){
+  public consultarTODO(){
 
-          this.listDocs = <Producto[]>this.model_util.preLeerDocs(docsRes, this.getDatosPreLeer());
-          this.DocsIniciales[this.numPaginaActual + 1] = this.listDocs[this.listDocs.length - 1];
-        
-        }else{
-          this.listDocs = [];
-        }
-      },
-      error:(err)=>{
-
-      }
-    });
-  }
-  
-  private reiniciarPagReactiva(){
-
-    this.DocsIniciales = [new Producto()];
-    this.numPaginaActual = 0;
-    this.listDocs = [];
-
+    let filtroProductoTodo:IQFiltro_Producto = this.getFiltroProductosTodo();
+    this.Productos$ =  this._ProductosServices.inicializarNuevaQueryDoc$(this.Productos$, filtroProductoTodo, this.subNext_Productos, this.subError);
   }
 
-  //================================================================================================================================
-  //Paginacion reactiva FULL
+  public consultarNombre(){
 
-  public paginarSiguienteFull(){
-    //determina que tipo de paginacion se esta usando
-    if(this._isPagReactivaFull == true){   
-      //================================================================
-      //determinar si es posible cargar un nuevo lote (pagina) de documentos
-      //analisando si el ultimo lote (pagina) no esta vacio y si tienen 
-      //la misma cantidad de elementos que el limite predefinido por pagina
-      //
-      let limiteLote = ((this.numPaginaActual + 1) * this.limitePorPagina);
-      if(this.listDocs.length == limiteLote ){
-        
-        //================================================================
-        //se recupera el valor del filtro que actualmente tiene el BehaviorSubject
-        //correspontiente a este lote (pagina), para poder preparar la nueva 
-        //solilicitud de paginacion
-        let configFiltro = this.DocsPag$[this.numPaginaActual].getValue();
-        this.numPaginaActual++;
-        configFiltro.docInicial = this.DocsIniciales[this.numPaginaActual];
-        //================================================================
-        //se crea un nuevo observador para poder analizar los cambios de 
-        //este nuevo lote (pagina), por ahora no es necesario el uso de next()
-        //ya que cada solicitud de cargar nuevo lote (pagina) obliga a crear 
-        //un nuevo observador
-        this.configurarPagReactivaFull(this.numPaginaActual, configFiltro);
-        
-      }
-      //================================================================
-    }      
-
-  }
-
-  private configurarPagReactivaFull(idxPag:number, configFiltro:IProducto$){
-
-    //================================================================
-    //se define el Observable especial:
-    this.DocsPag$[idxPag]= new BehaviorSubject<IProducto$>(configFiltro);
-    //================================================================
-    
-
-    this._DocsPagSuscription[idxPag] = this._ProductosServices.leerDocsFiltro(this.DocsPag$[idxPag]).subscribe({
-        next:(docsRes)=>{
-    
-          let iniIdxSeccion = idxPag * this.limitePorPagina;
-          let finIdxSeccion = (idxPag + 1) * this.limitePorPagina;
-
-          let iniListDocsParcial:Producto[] = [];
-          let finListDocsParcial:Producto[] = [];
-          
-          if (this.listDocs.length >= iniIdxSeccion) {
-            iniListDocsParcial = this.listDocs.slice(0, iniIdxSeccion);
-          }
-          if (this.listDocs.length >= finIdxSeccion) {
-            finListDocsParcial = this.listDocs.slice(finIdxSeccion);
-          }              
-      
-          
-          let lsD = iniListDocsParcial.concat(docsRes).concat(finListDocsParcial);
-          if (lsD.length > 0) {
-            this.listDocs = <Producto[]>this.model_util.eliminarItemsDuplicadosArray(lsD, this.model_util._id.nom);
-
-            if (docsRes.length > 0) {
-              this.DocsIniciales[idxPag + 1] = docsRes[docsRes.length -1];
-            }
-
-            //================================================================
-            //determinar borrado de documento y liberar memoria de los
-            //observables que no se usan
-            let pagRealEntero = (this.listDocs.length / this.limitePorPagina) + 1;
-            let pagActualEntero = this.numPaginaActual + 1; 
-            if (pagActualEntero >= pagRealEntero) {
-              let diferencialExcesoMemoria = Math.floor(pagActualEntero/pagRealEntero) ;
-              for (let i = 0; i < diferencialExcesoMemoria; i++) {
-                //================================================================
-                //liberar memoria de obserbables no usados
-                this._DocsPagSuscription[this._DocsPagSuscription.length -1].unsubscribe();
-                this._DocsPagSuscription.pop();
-                this.DocsPag$.pop();
-                this.DocsIniciales.pop();
-                this.numPaginaActual--;                
-                //================================================================
-                
-              }
-            }            
-            //================================================================
-
-          } else {
-            this.listDocs = [];
-          }
-                  
-        },
-        error:(err)=>{
-          console.log(err);
-        }
-    });
-  }
-
-  private reiniciarPagReactivaFull(){
-    if (this._DocsPagSuscription && this.DocsPag$) {
-      for (let i = 0; i < this._DocsPagSuscription.length; i++) {
-        this._DocsPagSuscription[i].unsubscribe();        
-      }
-      this.DocsPag$ = [];      
-    }
-    this.DocsIniciales = [new Producto()];
-    this.numPaginaActual = 0;
-    this.listDocs = [];
-
+    let filtroProductoNombre:IQFiltro_Producto = this.getFiltroProductosPorNombre();
+    this.Productos$ =  this._ProductosServices.inicializarNuevaQueryDoc$(this.Productos$, filtroProductoNombre, this.subNext_Productos, this.subError);
   }
   //================================================================================================================================
   //================================================================================================================================

@@ -11,7 +11,7 @@ import { AngularFirestore, AngularFirestoreCollection, AngularFirestoreDocument 
 import { Observable, observable, Subject, BehaviorSubject, from, fromEvent, of, Subscription, interval, timer, combineLatest } from 'rxjs';
 import { map, switchMap, mergeAll, concatAll, concatMap, mergeMap, mapTo, toArray, concat } from 'rxjs/operators';
 
-import { IProducto, IProducto$, Producto, Producto_Util, Iv_PreModificar_Productos  } from '../../../models/firebase/productos/productos';
+import { IProducto, IQFiltro_Producto, Producto, Producto_Util, Iv_PreModificar_Productos  } from '../../../models/firebase/productos/productos';
 
 
 @Injectable({
@@ -19,19 +19,55 @@ import { IProducto, IProducto$, Producto, Producto_Util, Iv_PreModificar_Product
 })
 export class ProductosService {
 
+  //================================================================
+
+  //array de documentos obtenidos de la bd
+  //de acuerdo a los filtros aplicados
+  private _listDocsReactiveFull:Producto[];
+
+  //================================================================
+  //objeto de filtrado especial para observable
+  //contiene los filtros iniciales de consulta
+  //que se modificaran dinamicamente
+
+  private _UltimoDoc$:BehaviorSubject<IQFiltro_Producto>;
+  private _UltimoDocSuscription:Subscription;
+
+  //================================================================
+  //propiedades para la paginacion:
+
+  private snapshotDocsIniciales:any[]; 
+  private numPaginaActual:number;
+  private limitePaginaPredefinido:number;
+
   public model_Util:Producto_Util;
   private _pathColeccion:string ;
 
-  public ultimoIDDoc:string;
+  private ultimoIDDoc:string;
+
 
   constructor(private _afs:AngularFirestore) {
 
     //================================================================
     //cargar la configuracion de la coleccion
+    this.limitePaginaPredefinido = 4;
+
     this.model_Util = new Producto_Util();
     //----------------[EN CONSTRUCCION]----------------
     this._pathColeccion = this.model_Util.getPathColeccion("");    
     //------------------------------------------------
+    //================================================================
+    //configurar lectura de ultimo Documento para obtener id
+    this._UltimoDoc$ = new BehaviorSubject<IQFiltro_Producto>({
+      query: this._queryUltimoDocParaID,
+      isPaginar:false,
+      isPagReactivaFull:false,
+      docInicial:null
+    });
+    this._UltimoDocSuscription = this.configurarBehaviorRes(this._UltimoDoc$).subscribe((docsRes)=>{
+      this.ultimoIDDoc = docsRes.length? docsRes[docsRes.length -1]._id : this.model_Util.generarIdVacio();
+    })
+    //================================================================
    }
 
   //================================================================================================================================
@@ -58,69 +94,81 @@ export class ProductosService {
   //   "ubicacion1(coleccion)/ubicacion2(documento)/ubicacion3(subColeccion)/ubicacion4(documento)......."
  
   //================================================================================================================================
-  //propiedades metodo de lecturas, esta propiedades se les asignan los metodos personalizados de cada lectura
-  //con el fin de ser transportados por el objeto filtro de cada BehaviorSubject determinado
-
-  public leerDocs = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtro:IProducto$)=>{
+  //declaracion de querys para cada consulta requerida
+  
+  public queryTodosDocs = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtroDoc:IQFiltro_Producto)=>{
     let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
-    cursorQueryRef = cursorQueryRef.orderBy(this.model_Util._id.nom, filtro.orden._id || "asc");
-    if (filtro.docInicial && filtro.docInicial != null) {
-      cursorQueryRef = cursorQueryRef.startAfter(filtro.docInicial._id);//
+    cursorQueryRef = cursorQueryRef.orderBy(this.model_Util._id.nom, filtroDoc.orden._id || "asc");
+    if (filtroDoc.docInicial && filtroDoc.docInicial != null) {
+      cursorQueryRef = cursorQueryRef.startAfter(filtroDoc.docInicial);//
     } else {
       cursorQueryRef = cursorQueryRef.startAfter(null);//
     }
     
-    cursorQueryRef = cursorQueryRef.limit(filtro.limite || 10);  //   
+    cursorQueryRef = cursorQueryRef.limit(filtroDoc.limite || this.limitePaginaPredefinido);  //   
     return cursorQueryRef;  
   };   
 
-  public leerID = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtro:IProducto$)=>{
+  public queryID = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtroDoc:IQFiltro_Producto)=>{
     let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
-    cursorQueryRef = cursorQueryRef.where(this.model_Util._id.nom, "==", filtro.docValores._id);
+    cursorQueryRef = cursorQueryRef.where(this.model_Util._id.nom, "==", filtroDoc.docValores._id);
     return cursorQueryRef;
   }; 
 
-  public leerUltimoDoc = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtro:IProducto$)=>{
+
+  
+
+  public queryNombre = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtroDoc:IQFiltro_Producto)=>{
+    let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+
+    if (filtroDoc.docValores && filtroDoc.docValores.nombre) {
+      cursorQueryRef = cursorQueryRef.where(this.model_Util.nombre.nom, "==", filtroDoc.docValores.nombre);
+    }
+
+    if(filtroDoc.filtroValores.nombre){
+      filtroDoc.filtroValores.nombre.max = this.model_Util.getLlaveFinBusquedaStrFirestore(filtroDoc.filtroValores.nombre.min);
+
+      cursorQueryRef = cursorQueryRef.where(this.model_Util.nombre.nom, ">=", filtroDoc.filtroValores.nombre.min)
+                       .where(this.model_Util.nombre.nom, "<", filtroDoc.filtroValores.nombre.max);    
+    }
+
+    cursorQueryRef = cursorQueryRef.orderBy(this.model_Util.nombre.nom, filtroDoc.orden.nombre || "asc");
+    cursorQueryRef = cursorQueryRef.limit(filtroDoc.limite || this.limitePaginaPredefinido);  //  
+    if (filtroDoc.docInicial && filtroDoc.docInicial != null) {
+      cursorQueryRef = cursorQueryRef.startAfter(filtroDoc.docInicial);// filtro.docInicial.nombre, filtro.docInicial._id 
+    } else {
+      cursorQueryRef = cursorQueryRef.startAfter(null);//
+    }
+    
+    return cursorQueryRef;  
+  }; 
+
+  //consulta especial para obtener el ultimo doc para su ID
+  private _queryUltimoDocParaID = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtroDoc:IQFiltro_Producto)=>{
     let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
     cursorQueryRef = cursorQueryRef.orderBy(this.model_Util._id.nom, "desc");
     cursorQueryRef = cursorQueryRef.limit(1); //se determina que SOLO DEBO LEER EL ULTIMO
     return cursorQueryRef;  
   }; 
-  
 
-  public leerNombre = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtro:IProducto$)=>{
-    let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
-
-    cursorQueryRef = cursorQueryRef.where(this.model_Util.nombre.nom, ">", filtro.docValores.nombre);
-    //.where(this.model_Util.nombre.nom, "<", "c");
-    cursorQueryRef = cursorQueryRef.orderBy(this.model_Util.nombre.nom,  "asc");
-    // cursorQueryRef = cursorQueryRef.orderBy(this.model_Util._id.nom,  "asc");
-    cursorQueryRef = cursorQueryRef.limit(filtro.limite || 10);  //  
-    if (filtro.docInicial && filtro.docInicial != null) {
-      cursorQueryRef = cursorQueryRef.startAfter(filtro.docInicial);// filtro.docInicial.nombre, filtro.docInicial._id 
-    } else {
-      cursorQueryRef = cursorQueryRef.startAfter(null);//
-    }
-    
-    
-    return cursorQueryRef;  
-  }; 
-  
   //================================================================================================================================
   //================================================================
   // metodo de lectura principal con opcion de filtros dinamicos
   //Parametros:
-  //filtro$ -> es un BehaviorSubject<IDoc$>  (subjet especial que permite enviar parametros iniciales 
+  //BSubject$ -> es un BehaviorSubject<IQFiltro_>  (subjet especial que permite enviar parametros iniciales 
   //           antes de la  primera subscripcion al observador), esta tipado con la interfaz 
-  //           especial   IDoc$  (donde   Doc   es el modelo a usa)la cual implementa en un solo objeto 
+  //           especial   IQFiltro_[modelo]  (donde   IQFiltro_[modelo]  es el modelo de filtrado para las querys)la cual implementa en un solo objeto 
   //           todos los campos especiales para el filtrado con el fin de que. 
   //           Este   filtro$   es declarado en la respectiva   clase.component.ts  donde se requiera subscribirse  
 
-  leerDocsFiltro(filtro$:BehaviorSubject<IProducto$>):Observable<Producto[]>{
-    //el pipe y el switchMap permiten trabajar con   BehaviorSubject<IDoc$>
-    //de forma dinamica asi que solo usando llamadas   filtro$.next({objeto con filtros}) 
-    return filtro$
-          .pipe(switchMap((filtro)=>{ 
+  private configurarBehaviorRes(BSubject$:BehaviorSubject<IQFiltro_Producto>):Observable<Producto[]>{
+    //el pipe y el switchMap permiten trabajar con   BehaviorSubject<IQFiltro_>
+    //de forma dinamica asi que solo usando llamadas   BSubject$.next({objeto con filtros}) 
+    return BSubject$
+          .pipe(switchMap((filtroDoc)=>{ 
+
+            let idxPag = this.numPaginaActual; //solo se usa en paginacion reactiva full
+
             //================================================================
             //configuracion inicial para la lectura de docs en OPCION COLECCION
             //se debe garantizar que  getPathColeccion()   devuelva un path para 
@@ -128,36 +176,40 @@ export class ProductosService {
             //el callback   (ref)=>{}   permite la creacion del cursor de consulta  
             //e implementar los filtros
             
-            //================================================================ 
-            return this._afs.collection(this._pathColeccion, (ref)=>{
+            return this._afs.collection(this._pathColeccion, (ref)=>filtroDoc.query(ref, filtroDoc))
+                  .snapshotChanges()  //devuelve docs y metadata
+                  .pipe(
+                    map(actions => {
+                      let docsLeidos = actions.map(a => {
+                        const data = a.payload.doc.data() as Producto;
+                        const _id = a.payload.doc.id;
+                        return { _id, ...data };
+                      });                     
+                      //================================================================
+                      //Aqui realizar el codigo a ejecutar antes de entregar los docs
+                      //y que requiera operaciones adicionales a nivel de array 
+                      //como sumatorias agrupaciones y demas
+                      //sin embargo esto se deberia hacer con la libreria de rxJs
 
-              //================================================================
-              //Declaracion e inicializacion del cursor
-              let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;           
-              //ejecuta el metodo de consulta enviado en el filtro
-              cursorQueryRef = filtro.query(cursorQueryRef, filtro);
-              //================================================================
-              
-              return cursorQueryRef;
-            })
-            .snapshotChanges()  //devuelve docs y metadata
-            .pipe(
-              map(actions => {
-                let docsLeidos = actions.map(a => {
-                  const data = a.payload.doc.data() as Producto;
-                  const _id = a.payload.doc.id;
-                  return { _id, ...data };
-                })
-                //================================================================
-                //Aqui realizar el codigo a ejecutar antes de entregar los docs
-                //y que requiera operaciones adicionales a nivel de array 
-                //como sumatorias agrupaciones y demas
-                //sin embargo esto se deberia hacer con la libreria de rxJs
-                //================================================================
-                return docsLeidos;
-              })                
-            );
-                        
+                      //================================================================
+                      if (filtroDoc.isPaginar) {
+  
+                        if (filtroDoc.isPagReactivaFull == false) {
+                          if (docsLeidos.length > 0) {
+                            this.snapshotDocsIniciales[this.numPaginaActual + 1] = actions[actions.length -1].payload.doc;   
+                          }
+                          docsLeidos = this.configurarPagReactiva(docsLeidos, filtroDoc);
+                        } else {
+                          if (docsLeidos.length > 0) {
+                            this.snapshotDocsIniciales[idxPag + 1] = actions[actions.length -1].payload.doc;   
+                          }
+                          docsLeidos = this.configurarPagReactivaFull(docsLeidos, idxPag, filtroDoc);
+                        }                             
+                      }
+                      return docsLeidos;
+                    })                
+                  );
+            //================================================================                         
           }))
   }
 
@@ -392,8 +444,197 @@ export class ProductosService {
   }
 
   //================================================================================================================================
+  //metodos Utilitarios:
+  //================================================================
+  //reinicializar parametros especiales de paginacion
+  private resetParamsPaginacion(filtroDoc:IQFiltro_Producto){
+    this._listDocsReactiveFull = [];
+    this.snapshotDocsIniciales = [filtroDoc.docInicial];
+    this.numPaginaActual = 0;
+  }
+  //================================================================
+  //inicializar behaviors y subscripciones refernete a consultas
+  public inicializarNuevaQueryDoc$(Docs$:IProductos$, filtroDoc:IQFiltro_Producto, next:(docRes)=>void, error:(err)=>void):IProductos${
+
+    if (!Docs$ || !Docs$.behaviors || !Docs$.suscriptions) {
+      Docs$ = {
+        behaviors:[],
+        suscriptions:[]
+      };
+    }
+    
+    this.resetParamsPaginacion(filtroDoc);
+
+    if (filtroDoc.isPagReactivaFull == false) {
+      if (Docs$.behaviors.length == 0 && Docs$.suscriptions.length == 0) {
+        Docs$.behaviors[0] = new BehaviorSubject<IQFiltro_Producto>(filtroDoc);
+        Docs$.suscriptions[0] = this.configurarBehaviorRes(Docs$.behaviors[0]).subscribe({next:next, error:error});   
+      } else {
+        Docs$.behaviors[0].next(filtroDoc);
+      }
+      
+    } else {
+      if (Docs$.behaviors.length > 0 && Docs$.behaviors.length == Docs$.suscriptions.length) {
+
+        while (Docs$.suscriptions.length > 1) {
+          Docs$.suscriptions[Docs$.behaviors.length-1].unsubscribe();
+          Docs$.suscriptions.pop();
+          Docs$.behaviors.pop()
+        }
+        Docs$.behaviors[0].next(filtroDoc);
+      
+      }else{
+        Docs$.behaviors[0] = new BehaviorSubject<IQFiltro_Producto>(filtroDoc);
+        Docs$.suscriptions[0] = this.configurarBehaviorRes(Docs$.behaviors[0]).subscribe({next:next, error:error});   
+      }
+    }
+    return Docs$;
+  }
+
+  public inicializarNuevaQueryDocPath_Id$(DocsPath_Id$:IProductoPath_Id$, next:(docRes)=>void, error:(err)=>void, _id?:string):IProductoPath_Id${
+    if (DocsPath_Id$.behavior == null && DocsPath_Id$.suscription) {
+      DocsPath_Id$.behavior = new BehaviorSubject<string|null>(_id || null); 
+      DocsPath_Id$.suscription = this.leerDocPorPathId(DocsPath_Id$.behavior).subscribe({next:next, error:error});        
+    } else {
+      if (_id) {
+        DocsPath_Id$.behavior.next(_id);        
+      }
+    }
+    return DocsPath_Id$;
+  }
+  //================================================================
+  //paginar Docs:
+  //este metodo determina detecta el tipo de paginacion y solicita el
+  //lote de documentos de acuerdo a lso parametros
+  public paginarDocs(Docs$:IProductos$, listDocs:Producto[], direccionPaginacion:"previo"|"siguiente", next?:(docRes)=>void, error?:(err)=>void):IProductos${
+
+    const filtroDoc = Docs$.behaviors[Docs$.behaviors.length -1].getValue();     
+    
+    if (filtroDoc.isPagReactivaFull == false) {
+      
+      if (direccionPaginacion == "siguiente" &&
+      listDocs.length == filtroDoc.limite) {
+        filtroDoc.docInicial = this.snapshotDocsIniciales[this.numPaginaActual + 1];
+        Docs$.behaviors[0].next(filtroDoc);
+        this.numPaginaActual++;        
+      }
+      if (direccionPaginacion == "previo" &&
+      listDocs.length > 0 && this.numPaginaActual > 0) {
+        filtroDoc.docInicial = this.snapshotDocsIniciales[this.numPaginaActual - 1];
+        Docs$.behaviors[0].next(filtroDoc);
+        this.numPaginaActual--;
+      }
+    } else {
+
+      if (direccionPaginacion != "previo") {
+
+        let limiteLote = (this.numPaginaActual + 1) * filtroDoc.limite;
+        if(listDocs.length == limiteLote ){
+          
+          filtroDoc.docInicial = this.snapshotDocsIniciales[this.numPaginaActual + 1];
+          Docs$.behaviors.push(new BehaviorSubject<IQFiltro_Producto>(filtroDoc));
+          this.numPaginaActual++;
+  
+          if (this.numPaginaActual > (Docs$.suscriptions.length -1)) {
+            Docs$.suscriptions[this.numPaginaActual] = this.configurarBehaviorRes(Docs$.behaviors[Docs$.behaviors.length-1]).subscribe({next:next, error:error});    
+          }
+        }
+
+      }
+    }
+    return Docs$;
+  }
+   
+  //================================================================
+  //configuracion de paginacion reactiva estandar
+  private configurarPagReactiva(docsRes:Producto[], configFiltro:IQFiltro_Producto):Producto[]{
+    //---falta implementar----
+    return docsRes;
+  }
+  //================================================================
+  //configuracion de paginacion reactiva Full
+  private configurarPagReactivaFull(docsRes:Producto[], idxPag:number, filtroDoc:IQFiltro_Producto):Producto[]{
+    
+    let iniIdxSeccion = idxPag * filtroDoc.limite;
+    let finIdxSeccion = (idxPag + 1) * filtroDoc.limite;
+
+    let iniListDocsParcial:Producto[] = [];
+    let finListDocsParcial:Producto[] = [];
+    
+    if (this._listDocsReactiveFull.length >= iniIdxSeccion) {
+      iniListDocsParcial = this._listDocsReactiveFull.slice(0, iniIdxSeccion);
+    }
+    if (this._listDocsReactiveFull.length >= finIdxSeccion) {
+      finListDocsParcial = this._listDocsReactiveFull.slice(finIdxSeccion);
+    }              
+
+    let lsD = iniListDocsParcial.concat(docsRes).concat(finListDocsParcial);
+    if (lsD.length > 0) {
+      this._listDocsReactiveFull = <Producto[]>this.model_Util.eliminarItemsDuplicadosArray(lsD, this.model_Util._id.nom);
+    
+    } else {
+      this._listDocsReactiveFull = [];
+    }   
+
+    return this._listDocsReactiveFull;
+  }
+
+  //================================================================
+  //liberador de memoria paginacion reactiva full
+  //(desuscribe los observables que no estan siendo utilizados)
+  public adminMemoriaReactivaFull(Docs$:IProductos$):IProductos$ {
+
+    const filtroDoc = Docs$.behaviors[Docs$.behaviors.length-1].getValue();
+    
+    if (Docs$.suscriptions.length && Docs$.behaviors.length) {
+      let pagRealEntero = (this._listDocsReactiveFull.length / filtroDoc.limite) + 1;
+      let pagActualEntero = this.numPaginaActual + 1; 
+      if (pagActualEntero >= pagRealEntero) {
+        let diferencialExcesoMemoria = Math.floor(pagActualEntero/pagRealEntero) ;
+        for (let i = 0; i < diferencialExcesoMemoria; i++) {
+          //================================================================
+          //liberar memoria de obserbables no usados
+          Docs$.suscriptions[Docs$.suscriptions.length -1].unsubscribe();
+          Docs$.suscriptions.pop();
+          Docs$.behaviors.pop();
+          this.snapshotDocsIniciales.pop();
+          this.numPaginaActual--;                
+          //================================================================
+          
+        }
+      }       
+    }
+    
+    return Docs$;
+
+  }    
+  //================================================================
+  //desuscribir observables pricipales
+  public unsubscribePrincipales(Docs$:IProductos$, DocsPath_Id$:IProductoPath_Id$){
+    while (Docs$.behaviors.length > 0) {
+      Docs$.suscriptions[Docs$.behaviors.length-1].unsubscribe();
+      Docs$.suscriptions.pop();
+      Docs$.behaviors.pop()
+    }
+    DocsPath_Id$.suscription.unsubscribe();
+    DocsPath_Id$.behavior = null;
+
+    this._UltimoDocSuscription.unsubscribe();
+  }
+  
+  //================================================================
+  //================================================================================================================================
 }
 
+export interface IProductos${
+  behaviors:BehaviorSubject<IQFiltro_Producto>[],
+  suscriptions:Subscription[]
+}
+
+export interface IProductoPath_Id${
+  behavior:BehaviorSubject<string|null>,
+  suscription:Subscription
+}
 
 
 
