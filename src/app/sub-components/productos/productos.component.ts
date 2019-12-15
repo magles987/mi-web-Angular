@@ -1,11 +1,13 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { FormControl, FormGroup } from "@angular/forms";
-import { Observable, observable, Subject, combineLatest, BehaviorSubject, Subscription, from } from 'rxjs';
 
-import { IProducto, IQFiltro_Producto, Producto, Iv_PreLeer_Productos } from '../../models/firebase/productos/productos';
-import { ProductosService, IProductos$, IProductoPath_Id$ } from '../../services/firebase/productos/productos.service';
+import { IDoc$, IDocPath_Id$, IRunFunSuscribe } from 'src/app/services/firebase/_Util';
 
+import { IProducto, Producto } from '../../models/firebase/productos/productos';
+import { ProductoService, IValQ_Producto, Iv_PreLeer_Producto } from '../../services/firebase/productos/productos.service';
 
+import { emb_SubColeccion, Iemb_SubColeccion } from 'src/app/models/firebase/productos/emb_subColeccion';
+import { IValQ_emb_SubColeccion, emb_subColeccionService } from 'src/app/services/firebase/productos/emb_subcoleccion.service';
 
 @Component({
   selector: 'app-productos',
@@ -14,57 +16,50 @@ import { ProductosService, IProductos$, IProductoPath_Id$ } from '../../services
 })
 export class ProductosComponent implements OnInit, OnDestroy {
 
-  //================================================================
+  //================================================
   //contenedor de documento para trabajo en plantilla
   public Producto:Producto; 
 
+  public ProductoCtrl$:IDoc$<Producto, IProducto<IValQ_Producto>>;
+  public Producto_Path_IdCtrl$:IDocPath_Id$<Producto>;
+
+  public Emb_SubColeccionGrupCtrl$:IDoc$<emb_SubColeccion, Iemb_SubColeccion<IValQ_emb_SubColeccion>>;
+
   //array de documentos obtenidos de la bd
   //de acuerdo a los filtros aplicados
-  public listProductos:Producto[];
+  public productosList:Producto[];
 
   public Productos_Path_Id:Producto | null;
 
-  //================================================================
-  //manejadores de observables y configuraciones
-  // personalizadas para consultas en firestore
-
-  private Productos$:IProductos$;
-  private ProductoPath_Id$:IProductoPath_Id$;
-
-  //================================================================
+  //================================================
   //Campos del formulario para crear o editar documento
   public formCrearOActualizar:FormGroup; 
-  //================================================================
-  //
-  
+  //================================================
+
   //================================================================================================================================
-  constructor(private _ProductosServices:ProductosService) {
-    //================================================================
+  constructor(public _ProductoService:ProductoService,
+              public _emb_SubColeccionService:emb_subColeccionService
+             ) {
+ 
+    //================================================
     //preparar la inicializacion de objetos principales
     this.Producto = new Producto();
 
-    this.listProductos = []; 
+    this.productosList = []; 
+    //================================================
+    //inicializacion de controls
+    this.ProductoCtrl$ = null;
+    this.Producto_Path_IdCtrl$ = null;
+    this.Emb_SubColeccionGrupCtrl$ = null;
 
-    this.Productos$ = {
-      behaviors : [],
-      suscriptions : []
-    };
+    //================================================
+    //inicializacion de primeras consultas (opcional):
 
-    this.ProductoPath_Id$ = {
-      behavior: null,
-      suscription:null
-    };
+    this.ProductoCtrl$ = this._ProductoService.getProductos$(this.ProductoCtrl$, this.RFS_Productos, null);
 
-    //================================================================
-    //configuracion inicial de filtrado 
-
-    let filtroProducto:IQFiltro_Producto = this.getFiltroProductosTodo();
-    this.Productos$ = this._ProductosServices.inicializarNuevaQueryDoc$(this.Productos$, filtroProducto, this.subNext_Productos, this.subError);
-
-    //------------------------[EN TEST]------------------------
-    this.ProductoPath_Id$ = this._ProductosServices.inicializarNuevaQueryDocPath_Id$(this.ProductoPath_Id$, this.subNext_ProductoPath_id, this.subError);
-
-    //----------------------------------------------------------------
+    this.Producto_Path_IdCtrl$ = this._ProductoService.getProductos_Path_Id$(this.Producto_Path_IdCtrl$, this.RFS_Productos_Path_Id, null);
+      
+    //================================================
 
   }
 
@@ -72,10 +67,10 @@ export class ProductosComponent implements OnInit, OnDestroy {
   //Hooks de componente angular:
   //================================================================================================================================
   ngOnInit() {   
-    //================================================================
+    //================================================
     //configurar las opciones del formulario
     let docTpl = new Producto();
-    let formControls:any = <IProducto>{
+    let formControls:any = <IProducto<any>>{
       // _id: new FormControl(docTpl._id),
       nombre : new FormControl(docTpl.nombre),
       categoria : new FormControl(docTpl.categoria),
@@ -83,100 +78,165 @@ export class ProductosComponent implements OnInit, OnDestroy {
     };
 
     this.formCrearOActualizar = new FormGroup(formControls); 
-    //================================================================
+    //================================================
   } 
 
   ngOnDestroy(){
-    //================================================================
+    //================================================
     //desuscribirse de todos los observables
-    
-    this._ProductosServices.unsubscribePrincipales(this.Productos$, this.ProductoPath_Id$);
-    //================================================================
+    this._ProductoService.unsubscribeAllProductos$([this.ProductoCtrl$], this.Producto_Path_IdCtrl$);
+    //================================================
   }
 
   //================================================================================================================================
   //declarar filtros (se debe usar metodo getters para poder crear
   //objetos de filtrado independientes, tomando una base como referencia)
-  private getFiltroProductosTodo():IQFiltro_Producto{
-    return {
-      query : this._ProductosServices.queryTodosDocs,
-
-      isPaginar:true,
-      isPagReactivaFull:true,
-      docInicial : null,
-      limite : 4,      
-      orden : <IProducto> {_id : "asc"},
+  private getFiltroProductosTodo():IProducto<IValQ_Producto>{
+    let valQuery:IProducto<IValQ_Producto> = {
+      _id:{
+        _orden:"asc"
+      }
     };
+    return valQuery;
   } 
 
-  private getFiltroProductosPorNombre():IQFiltro_Producto{
-    return {
-      query : this._ProductosServices.queryNombre,
-
-      isPaginar:true,
-      isPagReactivaFull:true,
-      docInicial : null,
-      limite : 4,      
-      orden : <IProducto> {nombre : "asc"},
-      
-      //docValores:<Producto>{nombre:"ba"}
-      filtroValores:{nombre:{min:"hu"}}
+  private getFiltroProductosPorNombre():IProducto<IValQ_Producto>{
+    let valQuery:IProducto<IValQ_Producto> = {
+      nombre:{
+        ini:"ha",
+        _orden:"asc"
+      }
     };
+    return valQuery;
+  } 
+
+  private getFiltroProductosPorPrecio():IProducto<IValQ_Producto>{
+    let valQuery:IProducto<IValQ_Producto> = {
+      precio:{
+        //val:100 //esto si quiero igualdad
+        min:300,
+        _orden:"asc"
+      }
+    };
+    return valQuery;
+  } 
+
+  private getFiltroProductosPorRuedas():IProducto<IValQ_Producto>{
+    let valQuery:IProducto<IValQ_Producto> = {
+      map_miscelanea:{
+        ruedas:{
+          val:2,
+          _orden:"asc"
+        }
+      }
+    };
+    return valQuery;
+  } 
+
+  private getFiltroProductosArrayNormal():IProducto<IValQ_Producto>{
+    let valQuery:IProducto<IValQ_Producto> = null;
+    return valQuery;
+  } 
+
+  private getFiltroProductosId():IProducto<IValQ_Producto>{
+    let valQuery:IProducto<IValQ_Producto> = {
+      _id:{
+        val:"000003-ab3e840a0dff7f5d",
+        _orden:"asc"
+      }
+
+    };
+    return valQuery;
   } 
 
   //================================================================
   //propiedades metodos de ejecucion next y error para las suscripciones
-  private subNext_Productos = (docRes:Producto[])=>{
-    let filtroDoc = this.Productos$.behaviors[this.Productos$.behaviors.length -1].getValue();
-    
-    this.listProductos = <Producto[]>this._ProductosServices.model_Util.preLeerDocs(docRes, this.getDatosPreLeer());   
-    
-    if (filtroDoc.isPagReactivaFull == false) {
-         //---lo que se requiera de paginacion reactiva estandar---
-    }else{
-      this.Productos$ = this._ProductosServices.adminMemoriaReactivaFull(this.Productos$);
+  //dentro de cada una se ejecuta el codigo una vez leido los docs
+  //desde la base de datos (sea poruna nueva solicitud query o por algun cambio 
+  //detectado por los observables asignados)
+
+  private RFS_Productos:IRunFunSuscribe<Producto> = {
+    next:(docRes:Producto[])=>{
+      this.productosList = <Producto[]>this._ProductoService.ModeloCtrl_Util.preLeerDocs(docRes, this.getDatosPreLeer());  
+    }, 
+    error:(err)=>{
+      console.log(err);
     }
-  
   };
 
-  private subNext_ProductoPath_id = (docRes:Producto)=>{
-    this.Productos_Path_Id = <Producto>this._ProductosServices.model_Util.preLeerDocs(docRes, this.getDatosPreLeer());
+  private RFS_Productos_Path_Id:IRunFunSuscribe<Producto> = {
+    next:(docRes:Producto)=>{
+      this.Productos_Path_Id = <Producto>this._ProductoService.ModeloCtrl_Util.preLeerDocs(docRes, this.getDatosPreLeer());
+    }, 
+    error:(err)=>{
+      console.log(err);
+    }
   };
 
-  private subError = (err:any)=>{
-
+  private RFS_Emb_SubColeccion:IRunFunSuscribe<any> = {
+    next:(docRes:any[])=>{
+      let test = docRes;
+      let a ="";
+    }, 
+    error:(err)=>{
+      console.log(err);
+    }
   };
+
   
   //================================================================================================================================
-  //paginacion reactiva (se autogestiona de acuerdo a estandar o full):
+  //paginacion reactiva (se autogestiona de acuerdo al tipo de paginacion):
 
   public paginarAnterior(){
 
-    this.Productos$ = this._ProductosServices.paginarDocs(this.Productos$, this.listProductos, "previo");
+    this.ProductoCtrl$ = this._ProductoService.paginarProductos$(this.ProductoCtrl$, "previo");
   }
 
   public paginarSiguiente(){
 
-    this.Productos$ =  this._ProductosServices.paginarDocs(this.Productos$,  this.listProductos, "siguiente", this.subNext_Productos, this.subError);
+    this.ProductoCtrl$ = this._ProductoService.paginarProductos$(this.ProductoCtrl$, "siguiente");
   }
 
+  //================================================================
+  //metodos que ejecutan nuevas consultas
+  //ES MEJOR USAR METODOS INDEPENDIENTES ESTO ES SOLO PRUEBA
 
-  public consultarTODO(){
+  public consultarProducto(opc: "Todo"|"_id"|"Nombre"|"Precio"|"Ruedas"|"ArrayNormal"|"SubColGrup"){
+    switch (opc) {
+      case "Todo":
+        this.ProductoCtrl$ = this._ProductoService.getProductos$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosTodo());
+        break;
+      case "_id":
+        this.ProductoCtrl$ = this._ProductoService.getProductoId$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosId());
+        break;        
+      case "Nombre":
+        this.ProductoCtrl$ = this._ProductoService.getProductosPorNombre$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorNombre());
+        break;  
+      case "Precio":
+        this.ProductoCtrl$ = this._ProductoService.getProductosPorPrecio$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorPrecio());
+        break;
+      case "Ruedas":
+        this.ProductoCtrl$ = this._ProductoService.getProductosPorMiscRuedas$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorRuedas());
+        break;  
 
-    let filtroProductoTodo:IQFiltro_Producto = this.getFiltroProductosTodo();
-    this.Productos$ =  this._ProductosServices.inicializarNuevaQueryDoc$(this.Productos$, filtroProductoTodo, this.subNext_Productos, this.subError);
-  }
-
-  public consultarNombre(){
-
-    let filtroProductoNombre:IQFiltro_Producto = this.getFiltroProductosPorNombre();
-    this.Productos$ =  this._ProductosServices.inicializarNuevaQueryDoc$(this.Productos$, filtroProductoNombre, this.subNext_Productos, this.subError);
+      case "ArrayNormal":
+        this.ProductoCtrl$ = this._ProductoService.getProductosPorArrayNormal$(this.ProductoCtrl$, this.RFS_Productos, null);    
+        break;
+      case "SubColGrup":
+        //let path_embBase = this.productosList[10]._pathDoc; //opcion basica
+        let path_embBase = null; //opcion collection group
+        this.Emb_SubColeccionGrupCtrl$ = this._emb_SubColeccionService.getEmb_SubColeccions$(this.Emb_SubColeccionGrupCtrl$, this.RFS_Emb_SubColeccion, null, path_embBase );    
+        break;        
+    
+      default:
+        break;
+    }
   }
   //================================================================================================================================
   //================================================================================================================================
 
   //a modo de prueba
-  private getDatosPreLeer():Iv_PreLeer_Productos{
+  private getDatosPreLeer():Iv_PreLeer_Producto{
     return {
       imp : 20
     };
@@ -194,7 +254,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
     //determinar si es actualizar o crear (dependiendo 
     //si se recibe docAnterior)
     if (docAnterior) {
-      this._ProductosServices.actualizarDoc(doc)
+      this._ProductoService.actualizarProducto(doc)
       .then((docActualizado)=>{
         console.log("987Actualizado: " + docActualizado);
         this.formCrearOActualizar.reset();
@@ -203,7 +263,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
         console.log("987 Error al Actualizalo: " + error);
       });           
     } else {
-      this._ProductosServices.crearDoc_set(doc)
+      this._ProductoService.crearProducto(doc)
       .then((docCreado)=>{
         console.log("987Creado: " + docCreado);
         this.formCrearOActualizar.reset();
@@ -219,32 +279,39 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   }
 
-  crear(){
-    console.log(this.formCrearOActualizar.value);
-    let d = this._ProductosServices.crearDoc_set(this.formCrearOActualizar.value);
-    d.then(data=>{
-      console.log("Bien987: " + data);
-    })
-    .catch(err=>{
-      console.log(err);
-    })
-    
-  }
+  crear_set(opc: "Col"|"subCol"){
+    switch (opc) {
+      case "Col":
+        this._ProductoService.crearProducto(<Producto>{}) //<Producto>{}solo para ejemplo
+        .then(()=>{
+          console.log("ya en el componente: ");
+        })
+        .catch(err=>{
+          console.log("tratar el erro en el componente " + err);
+        })
+        break;
 
-  crear_set(){
-    this._ProductosServices.crearDoc_set()
-    .then(data=>{
-      console.log("ya en el componente: " + data);
-    })
-    .catch(err=>{
-      console.log("tratar el erro en el componente " + err);
-    })
+      case "subCol":
+        const path_embBase = "/Productos/000010-ab42f9b7827f4749";
+        this._emb_SubColeccionService.crearEmb_SubColeccion(<emb_SubColeccion>{}, path_embBase) //emb_SubColeccion>{}solo para ejemplo
+        .then(()=>{
+          console.log("ya en el componente: ");
+        })
+        .catch(err=>{
+          console.log("tratar el erro en el componente " + err);
+        })
+        break;        
+    
+      default:
+        break;
+    }
+
   }
 
   editar(){
-    this._ProductosServices.actualizarDoc()
-    .then(data=>{
-      console.log("EDITADO ya en el componente: " + data);
+    this._ProductoService.actualizarProducto(<Producto>{})//<Producto>{}solo para ejemplo
+    .then(()=>{
+      console.log("EDITADO ya en el componente: ");
     })
     .catch(err=>{
       console.log("EDITAR tratar el error en el componente " + err);
@@ -252,9 +319,9 @@ export class ProductosComponent implements OnInit, OnDestroy {
   }
 
   eliminar(){
-    this._ProductosServices.eliminarDoc()
-    .then(data=>{
-      console.log("borrado ya en el componente: " + data);
+    this._ProductoService.eliminarProducto("") //""solo para ejemplo
+    .then(()=>{
+      console.log("borrado ya en el componente: ");
     })
     .catch(err=>{
       console.log("borrado tratar el error en el componente " + err);

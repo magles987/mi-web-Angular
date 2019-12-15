@@ -1,640 +1,1087 @@
 //================================================================================================================================
-//los servicios en angular implementas las funciones (en muchos casos las CRUD) de los datos recibidos 
-// desde firebase, en otras palabras hace las veces de controller para angular
-
-//================================================================================================================================
 
 import { Injectable } from '@angular/core';
 
 import { AngularFirestore, AngularFirestoreCollection, AngularFirestoreDocument } from '@angular/fire/firestore';
 
-import { Observable, observable, Subject, BehaviorSubject, from, fromEvent, of, Subscription, interval, timer, combineLatest } from 'rxjs';
-import { map, switchMap, mergeAll, concatAll, concatMap, mergeMap, mapTo, toArray, concat } from 'rxjs/operators';
+import { Observable, observable, Subject, BehaviorSubject, } from 'rxjs';
+import { map, switchMap, } from 'rxjs/operators';
 
-import { IProducto, IQFiltro_Producto, Producto, Producto_Util, Iv_PreModificar_Productos  } from '../../../models/firebase/productos/productos';
+import { IProducto, Producto, IMap_miscelanea, IMapA_misc } from '../../../models/firebase/productos/productos';
+import { Ctrl_Util, IUtilCampo, IValQ, Service_Util, EtipoPaginar, IQFiltro,IDoc$, IDocPath_Id$, IRunFunSuscribe } from '../_Util';
+import { emb_SubColeccionCtrl_Util } from './emb_subcoleccion.service';
 
+//================================================================================================================================
+/*INTERFACES especiales para cado Modelo_util*/
+//Interfaces especiales para implementar contenedores de 
+//objetos utilitarios para los metodos Pre  
+//deben llevar el sufijo   _Modelo   del moedelo para no generar 
+//conflictos con otras colecciones cuando se haga   import
+//Ejemplo: Iv_PreLeer{aqui el sufijo de coleccion o subcoleccion}
 
+/*Iv_PreModificar_{Modelo}*/
+//OPCIONAL el agregar propiedades
+//contiene propiedades externar al modelo (mas especificamente IModelo)
+//para realizar calculos o enriquecer los docs leidos
+//se recomienda crear objetos de esta interfaz en la 
+//propiedad-funcion next de los objetos RFS
+export interface Iv_PreLeer_Producto{
+    imp:number;  //--solo para ejemplo---
+}
+
+/*Iv_PreModificar_{Modelo}*/
+//OPCIONAL el agregar propiedades
+//contiene propiedades externar al modelo (mas especificamente IModelo) 
+//para realizar calculos o enriquecer el doc a modificar (ya sea crear o editar) 
+export interface Iv_PreModificar_Producto{
+
+}
+
+/*IValQ_{Modelo}*/
+//OPCIONAL el agregar propiedades
+//contiene propiedades personalizadas para este modelo_util para 
+//construir querys personalizadas y especificas
+export interface IValQ_Producto extends IValQ{
+
+}
+//================================================================================================================================
+/*SERVICE DEL MODELO*/
+//los servicios en angular implementas las funciones (en muchos casos las CRUD) de los datos recibidos 
+//desde firebase, en otras palabras hace las veces de controller para angular
+//================================================================================================================================
+//es inyectable:
 @Injectable({
-  providedIn: 'root'
+    providedIn: 'root'
 })
-export class ProductosService {
+//================================================================================================================================
+/*{Modelo}Service*/
+//las clases services para CRUD para se deben nombrar con el 
+//formato en singular de la siguiente manera: 
+//
+//Colecciones:  class ModeloService
+//SubColecciones: class Emb_ModeloService
+//
 
-  //================================================================
-
-  //array de documentos obtenidos de la bd
-  //de acuerdo a los filtros aplicados
-  private _listDocsReactiveFull:Producto[];
-
-  //================================================================
-  //objeto de filtrado especial para observable
-  //contiene los filtros iniciales de consulta
-  //que se modificaran dinamicamente
-
-  private _UltimoDoc$:BehaviorSubject<IQFiltro_Producto>;
-  private _UltimoDocSuscription:Subscription;
-
-  //================================================================
-  //propiedades para la paginacion:
-
-  private snapshotDocsIniciales:any[]; 
-  private numPaginaActual:number;
-  private limitePaginaPredefinido:number;
-
-  public model_Util:Producto_Util;
-  private _pathColeccion:string ;
-
-  private ultimoIDDoc:string;
-
-
-  constructor(private _afs:AngularFirestore) {
+export class ProductoService extends Service_Util< Producto, IProducto<any>,  ProductoCtrl_Util, IProducto<IValQ_Producto>> {
 
     //================================================================
-    //cargar la configuracion de la coleccion
-    this.limitePaginaPredefinido = 4;
-
-    this.model_Util = new Producto_Util();
-    //----------------[EN CONSTRUCCION]----------------
-    this._pathColeccion = this.model_Util.getPathColeccion("");    
-    //------------------------------------------------
-    //================================================================
-    //configurar lectura de ultimo Documento para obtener id
-    this._UltimoDoc$ = new BehaviorSubject<IQFiltro_Producto>({
-      query: this._queryUltimoDocParaID,
-      isPaginar:false,
-      isPagReactivaFull:false,
-      docInicial:null
-    });
-    this._UltimoDocSuscription = this.configurarBehaviorRes(this._UltimoDoc$).subscribe((docsRes)=>{
-      this.ultimoIDDoc = docsRes.length? docsRes[docsRes.length -1]._id : this.model_Util.generarIdVacio();
-    })
-    //================================================================
-   }
-
-  //================================================================================================================================
-  //================================================================================================================================
-  //Metodos CRUD:
-  //================================================================================================================================
-  //================================================================================================================================
-  //Metodos de Lectura:
-  //la librearia de @angular/Fire hace uso de observables para leer datos ademas
-  //se manejan 2 formas diferentes de leer los datos de la BD
-  //
-  //1. Colecciones: cuando se lee un grupo (array) de documentos de una misma coleccion
-  //de acuerdo a algun tipo de consulta o parametro de filtrado.
-  //IMPORTANTE: cuando se lee a traves de colecciones el  PATH usado en  this._afs.collection(PATH, .....)
-  //siempre debe apuntar a una COLECCION SIEMPRE, no a un documento, esta libreria comprueba rudimentariamente
-  //que apunta a una coleccion cuando el  PATH  tiene un numero de ubicaciones   IMPAR  
-  //   "ubicacion1(coleccion)/ubicacion2(documento)/ubicacion3(subColeccion)/......."
-  //
-  //2. Documento:  cuando se lee 1 y solo 1 documento, normalmente consulta por id  a 
-  //traves de   path   de firestore  que es de la forma  "/coleccion/{_id del doc}"
-   //IMPORTANTE: cuando se lee a traves de documentos el  PATH usado en    this._afs.doc<....>(filtroPath_id)
-  //siempre debe apuntar a un DOCUMENTO SIEMPRE, no a una coleccion; esta libreria comprueba rudimentariamente
-  //que apunta a un docuemnto cuando el  PATH  tiene un numero de ubicaciones   PAR 
-  //   "ubicacion1(coleccion)/ubicacion2(documento)/ubicacion3(subColeccion)/ubicacion4(documento)......."
- 
-  //================================================================================================================================
-  //declaracion de querys para cada consulta requerida
-  
-  public queryTodosDocs = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtroDoc:IQFiltro_Producto)=>{
-    let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
-    cursorQueryRef = cursorQueryRef.orderBy(this.model_Util._id.nom, filtroDoc.orden._id || "asc");
-    if (filtroDoc.docInicial && filtroDoc.docInicial != null) {
-      cursorQueryRef = cursorQueryRef.startAfter(filtroDoc.docInicial);//
-    } else {
-      cursorQueryRef = cursorQueryRef.startAfter(null);//
-    }
+    //Propiedaes utilitarias
     
-    cursorQueryRef = cursorQueryRef.limit(filtroDoc.limite || this.limitePaginaPredefinido);  //   
-    return cursorQueryRef;  
-  };   
+    //almacena el path correspondiente a este coleccion o subcoleccion
+    private _pathColeccion: string;
 
-  public queryID = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtroDoc:IQFiltro_Producto)=>{
-    let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
-    cursorQueryRef = cursorQueryRef.where(this.model_Util._id.nom, "==", filtroDoc.docValores._id);
-    return cursorQueryRef;
-  }; 
+    //almacena un limite de docs leidos estandar para TODAS LAS QUERYS,
+    //sin embargo se puede cambiar este numero en la propiedad QFiltro.limite
+    private limitePaginaPredefinido: number;
 
+    //================================================================
+    constructor(private _afs: AngularFirestore) {
+        super();
+        //================================================================
+        //cargar la configuracion de la coleccion:
 
-  
+        //indispensable dejar una referencia de_afs en la clase padre
+        super.U_afs = this._afs;
+        
+        //Objeto con metodos y propiedeades de utilidad para el service
+        this.ModeloCtrl_Util = new ProductoCtrl_Util();
 
-  public queryNombre = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtroDoc:IQFiltro_Producto)=>{
-    let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+        //establece un limite predefinido (es personalizable)
+        this.limitePaginaPredefinido = 4;//10;
 
-    if (filtroDoc.docValores && filtroDoc.docValores.nombre) {
-      cursorQueryRef = cursorQueryRef.where(this.model_Util.nombre.nom, "==", filtroDoc.docValores.nombre);
+        //================================================================
+        //Configuracion de pathColeccion
+        //para las colecciones SIEMPRE se usa el path coleccion generado 
+        //desde la clase ctrl_Util
+        //
+        this._pathColeccion = this.ModeloCtrl_Util.getPathColeccion();
+        //================================================================
+        //Inicializar el ultimoDoc$
+        this.leerUltimoDoc(null, this._pathColeccion);
+        //================================================================
+    }
+    //================================================================================================================================
+    /*Consideraciones de lecturas*/
+    //
+    //Observaciones:
+    //la librearia de @angular/Fire hace uso de observables para leer datos ademas
+    //se manejan 3 formas diferentes de leer los datos de la BD
+    //
+    //1. Colecciones: cuando se lee varios (array) de documentos de una misma coleccion
+    //de acuerdo a algun tipo de consulta o parametro de filtrado.
+    //IMPORTANTE: cuando se lee a traves de colecciones el  PATH usado en  this._afs.collection(PATH, .....)
+    //SIEMPRE debe apuntar a una COLECCION, no a un documento, esta libreria comprueba rudimentariamente
+    //que apunta a una coleccion cuando el  PATH  tiene un numero de ubicaciones   IMPAR  
+    //   "ubicacion1{coleccion}/ubicacion2{_idDoc}/ubicacion3{subColiccion}/......."
+    //
+    //2. Documento:  cuando se lee 1 y solo 1 documento, normalmente consulta por id  a 
+    //traves de   path   de firestore  que es de la forma  "/coleccion/{_id del doc}"
+    //IMPORTANTE: cuando se lee a traves de documentos el  PATH usado en    this._afs.doc<....>(filtroPath_id)
+    //se debe apuntar SIEMPRE a un DOCUMENT, no a una coleccion; esta libreria comprueba rudimentariamente
+    //que apunta a un docuemnto cuando el  PATH  tiene un numero de ubicaciones   PAR 
+    //   "ubicacion1{coleccion}/ubicacion2{_idDoc}/ubicacion3{subColicc}on)/ubicacion4{_idDoc}......."
+    //
+    //3. collectionGroup: es un caso especial (y recien implementado en 2019) que permite agrupar varias subcolecciones 
+    //y poderlas consultarlas a todas a la vez, ya que anteriormente no se podia realizar esta consultas de forma nativa
+    //Ejemplo de datos almacenados en una coleccion de firestore:
+    // coleccion:[
+    //     {
+    //      _id:"xxx1"
+    //      campo:"algo1",
+    //      subColeccion:[
+    //          {
+    //             _id:"S1xxx1"
+    //              subcampo:"dato1-1",
+    //          },
+    //          {
+    //             _id:"S1xxx2"
+    //              subcampo:"dato1-2",
+    //          },
+    //      ]
+    //     },
+    //     {
+    //         _id:"xxx2"
+    //         campo:"algo2",
+    //         subColeccion:[
+    //             {
+    //                _id:"S2xxx1"
+    //                 subcampo:"dato2-1",
+    //             },
+    //             {
+    //                _id:"S2xxx2"
+    //                 subcampo:"dato2-2",
+    //             },
+    //         ]
+    //        },
+    // ]
+    //en la estructura de datos anterior, firestore de forma basica permite realizar 
+    //querys en los subcampo de solo una de las 2 subcolecciones a la vez, esto 
+    //limita enormemente la posibilidad de obtener informacion que este contenida 
+    //en las otras subcolecciones de la misma coleccion padre.
+    //Sin embargo firestore implemento el permitir consultar todas las supcolecciones por medio
+    //del metodo _afs.collectionGroup() pero para esta opcion SE DEBE CREAR UNA  EXENCION 
+    //(que es lo contrario a un Indice)  POR CADA CAMPO que se quiera consultar de la subcoleccion
+    //
+    //================================================================
+    /*Metodos CRUD SOLO COLECCIONES:*/
+    //Observaciones:
+    //al utilizar lecturas reactivas los metodos leer de CRUD varian
+    //su comportamiento ya que difieren de la metodologia MVC tradicional
+    //por lo tanto los filtros y construccion de querys son pasadas como 
+    //propiedades al behavior determinado 
+    //
+    //Para el caso de las colecciones los metodos de lectura NO REQUIEREN
+    //EL RECIBIR un pathColeccion ya que al ser colecciones RAIZ siempre 
+    //su path sera con el formato: /{coleccion}
+    //
+    //Los metodos de lectura NO DEVUELVEN LOS DOCS LEIDOS, devuelven un 
+    //objeto control$ de tipo IDoc$<TModelo, TIModelo_IvalQ> que contiene 
+    //TODO lo referente a la lectura reactiva (behaviors, observables, 
+    //suscriptions, limites, tipo de paginacion filtros querys y demas) 
+    //dentro de este control$ se almacena un RFS que contiene las 
+    //funciones que se ejecutan una vez obtenidos los docs
+    //es la razon de que todas lso metodos de lectura tengan la terminacion  $
+    //================================================================
+    /*get{Models}$()*/
+    //permite obtener todos los docs de una coleccion, es el metodo base de 
+    //lectura con el cual se puede construir las demas consultas
+    //Parametros:
+    //doc$:
+    //objeto control$ con toda la informacion de la lectura reactiva (aunque 
+    //puede recibirse  null  si es la primera vez)
+    //
+    //RFS:
+    //objeto con las funciones next() y error() para ejecutar una vez este suscrito
+    //
+    //valQuery:
+    //recibe un objeto creado a partir de la interfaz IModelo<IvalQ_Modelo>
+    //que a su vez contiene los valores necesarios para construir la query
+    //(valores a buscar, rangos, iniciales, entre otros)
+    //
+    //limite:
+    //indica el numero maximo de docs que puede leer en la query, si no se
+    //recibe se le asigna el limite predefinido para todas las querys
+    //
+    //docInicial:
+    //solo es necesario recibirlo si por alguna razon se quiere paginar 
+    //No teniendo como base los snapshotsDocs sino otra cosa
+    public getProductos$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+                        RFS:IRunFunSuscribe<Producto>, 
+                        valQuery:IProducto<IValQ_Producto> | null, 
+                        limite=this.limitePaginaPredefinido, 
+                        docInicial:any=null, 
+                        ):IDoc$<Producto, IProducto<IValQ_Producto>>{
+        
+        //================================================
+        //configurar el pathColeccion solo para coleccion:
+        const pathColeccion = this._pathColeccion; 
+        const isColeccionGrup = false;       
+        //================================================================
+        //Configurar la query de esta lectura:
+        //esta query es una funcion que se cargará al behavior como filtro 
+        //al momento de que este se ejecute
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
+                      QFiltro: IQFiltro<IProducto<IValQ_Producto>>) => {
+
+            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+            
+            //================================================================
+            //ordenar, limitar y prepaginar con docInicial
+            cursorQueryRef = cursorQueryRef.orderBy(this.ModeloCtrl_Util._id.nom, QFiltro.valQuery._id._orden || "asc") 
+            cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);
+            if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);                    
+            }            
+            //================================================================
+
+            return cursorQueryRef;
+        };
+        //================================================================
+        //Configurar el filtro con las propiedades adicionales como:
+        //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
+        //el orden y demas propiedades
+        const QFiltro:IQFiltro<IProducto<IValQ_Producto>> = {
+            query : query,
+            docInicial : docInicial,
+            limite: limite,
+            tipoPaginar : EtipoPaginar.Full,
+            valQuery : (valQuery && valQuery != null)? valQuery : <IProducto<IValQ_Producto>>{_id:{_orden:"asc"}}
+        }
+        //================================================================
+        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
     }
 
-    if(filtroDoc.filtroValores.nombre){
-      filtroDoc.filtroValores.nombre.max = this.model_Util.getLlaveFinBusquedaStrFirestore(filtroDoc.filtroValores.nombre.min);
+    /*get{Model}Id$()*/
+    //permite obtener un doc por medio de un id SIN  path_id, es un metodo auxiliar
+    //con el mismo funcionamiento de las demas lecturas (excepto la de
+    // getModelo_Path_id$() ).
+    //
+    //Recordar:en lo posible usar getModelo_Path_id$() a no ser que no se 
+    //cuente con el path_id, para ese caso es mejor este metodo
+    //
+    //Parametros:
+    //doc$:
+    //objeto control$ con toda la informacion de la lectura reactiva (aunque 
+    //puede recibirse  null  si es la primera vez)
+    //
+    //RFS:
+    //objeto con las funciones next() y error() para ejecutar una vez este suscrito
+    //
+    //valQuery:
+    //recibe un objeto creado a partir de la interfaz IModelo<IvalQ_Modelo>
+    //que a su vez contiene los valores necesarios para construir la query
+    //(valores a buscar, rangos, iniciales, entre otros)
+    //
+    //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc
+    public getProductoId$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+                          RFS:IRunFunSuscribe<Producto>, 
+                          valQuery:IProducto<IValQ_Producto> | null
+                          ):IDoc$<Producto, IProducto<IValQ_Producto>>{
 
-      cursorQueryRef = cursorQueryRef.where(this.model_Util.nombre.nom, ">=", filtroDoc.filtroValores.nombre.min)
-                       .where(this.model_Util.nombre.nom, "<", filtroDoc.filtroValores.nombre.max);    
+        //================================================
+        //configurar el pathColeccion solo para coleccion:
+        const pathColeccion = this._pathColeccion; 
+        const isColeccionGrup = false;    
+        //================================================================
+        //Configurar la query de esta lectura:
+        //esta query es una funcion que se cargará al behavior como filtro 
+        //al momento de que este se ejecute
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
+                     QFiltro: IQFiltro<IProducto<IValQ_Producto>>) => {
+
+            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+            //================================================================
+            //Query Condiciones:
+            cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util._id.nom, "==", QFiltro.valQuery._id.val);            
+            //================================================================
+            //no se requiere paginar            
+            return cursorQueryRef;
+        };
+        //================================================================
+        //Configurar el filtro con las propiedades adicionales como:
+        //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
+        //el orden y demas propiedades
+        const QFiltro:IQFiltro<IProducto<IValQ_Producto>> = {
+            query : query,
+            docInicial : null,
+            limite: 1,
+            tipoPaginar : EtipoPaginar.No,
+            valQuery : (valQuery && valQuery != null)? valQuery : <IProducto<IValQ_Producto>>{_id:{_orden:"asc"}}
+        }        
+        //================================================================
+        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
     }
 
-    cursorQueryRef = cursorQueryRef.orderBy(this.model_Util.nombre.nom, filtroDoc.orden.nombre || "asc");
-    cursorQueryRef = cursorQueryRef.limit(filtroDoc.limite || this.limitePaginaPredefinido);  //  
-    if (filtroDoc.docInicial && filtroDoc.docInicial != null) {
-      cursorQueryRef = cursorQueryRef.startAfter(filtroDoc.docInicial);// filtro.docInicial.nombre, filtro.docInicial._id 
-    } else {
-      cursorQueryRef = cursorQueryRef.startAfter(null);//
-    }
-    
-    return cursorQueryRef;  
-  }; 
+    //TEST---------------------------------------------------------------------------------------------------------------------------
+    public getProductosPorNombre$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+                                  RFS:IRunFunSuscribe<Producto>, 
+                                  valQuery:IProducto<IValQ_Producto>, 
+                                  limite=this.limitePaginaPredefinido, 
+                                  docInicial:any=null
+                                  ):IDoc$<Producto, IProducto<IValQ_Producto>>{
+        
+        //================================================
+        //configurar el pathColeccion solo para coleccion:
+        const pathColeccion = this._pathColeccion; 
+        const isColeccionGrup = false;       
+        //================================================================
+        //Configurar la query de esta lectura:
+        //esta query es una funcion que se cargará al behavior como filtro 
+        //al momento de que este se ejecute
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
+                      QFiltro: IQFiltro<IProducto<IValQ_Producto>>) => {
 
-  //consulta especial para obtener el ultimo doc para su ID
-  private _queryUltimoDocParaID = (ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtroDoc:IQFiltro_Producto)=>{
-    let cursorQueryRef : firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
-    cursorQueryRef = cursorQueryRef.orderBy(this.model_Util._id.nom, "desc");
-    cursorQueryRef = cursorQueryRef.limit(1); //se determina que SOLO DEBO LEER EL ULTIMO
-    return cursorQueryRef;  
-  }; 
-
-  //================================================================================================================================
-  //================================================================
-  // metodo de lectura principal con opcion de filtros dinamicos
-  //Parametros:
-  //BSubject$ -> es un BehaviorSubject<IQFiltro_>  (subjet especial que permite enviar parametros iniciales 
-  //           antes de la  primera subscripcion al observador), esta tipado con la interfaz 
-  //           especial   IQFiltro_[modelo]  (donde   IQFiltro_[modelo]  es el modelo de filtrado para las querys)la cual implementa en un solo objeto 
-  //           todos los campos especiales para el filtrado con el fin de que. 
-  //           Este   filtro$   es declarado en la respectiva   clase.component.ts  donde se requiera subscribirse  
-
-  private configurarBehaviorRes(BSubject$:BehaviorSubject<IQFiltro_Producto>):Observable<Producto[]>{
-    //el pipe y el switchMap permiten trabajar con   BehaviorSubject<IQFiltro_>
-    //de forma dinamica asi que solo usando llamadas   BSubject$.next({objeto con filtros}) 
-    return BSubject$
-          .pipe(switchMap((filtroDoc)=>{ 
-
-            let idxPag = this.numPaginaActual; //solo se usa en paginacion reactiva full
+            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
 
             //================================================================
-            //configuracion inicial para la lectura de docs en OPCION COLECCION
-            //se debe garantizar que  getPathColeccion()   devuelva un path para 
-            //coleccion o sub coleccion.
-            //el callback   (ref)=>{}   permite la creacion del cursor de consulta  
-            //e implementar los filtros
+            //Query Condiciones:
+            //
+            //firestore no permite condiciones de busqueda avanzadas para strings 
+            //asi que para suplir la consulta de textos que comiencen por algun texto
+            //
+            //se usa una consulta con 2 keys limitadoras y se obtiene todos los documentos 
+            //que esten dentro de ese rango
+            //
+            if (QFiltro.valQuery && QFiltro.valQuery.nombre) {
+                let keyIni = this.ModeloCtrl_Util.nombre.formateoCampo(QFiltro.valQuery.nombre.ini);
+                //se calcula la keyFin que sera un caracter superior al keyIni
+                let keyFin = this.ModeloCtrl_Util.getLlaveFinBusquedaStrFirestore(keyIni);
+    
+                //se establecen los rangos, entre mas texto tengan cada key mas precisa es la busqueda
+                cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.nombre.nom, ">=", keyIni)
+                                               .where(this.ModeloCtrl_Util.nombre.nom, "<", keyFin);
+            }
+    
+            //================================================================
+            //ordenar, limitar y prepaginar con docInicial
+            cursorQueryRef =  cursorQueryRef.orderBy(this.ModeloCtrl_Util.nombre.nom, QFiltro.valQuery.nombre._orden || "asc");
+            cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);      
+            if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);                    
+            }    
+            //================================================================
+    
+            return cursorQueryRef;
+        };
+        //================================================================
+        //Configurar el filtro con las propiedades adicionales como:
+        //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
+        //el orden y demas propiedades
+        const QFiltro:IQFiltro<IProducto<IValQ_Producto>> = {
+            query : query,
+            docInicial : docInicial,
+            limite: limite,
+            tipoPaginar : EtipoPaginar.Simple,
+            valQuery : (valQuery && valQuery != null)? valQuery : <IProducto<IValQ_Producto>>{nombre:{_orden:"asc"}}
+        }        
+        //================================================================
+        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
+    }
+
+    public getProductosPorPrecio$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+                                  RFS:IRunFunSuscribe<Producto>, 
+                                  valQuery:IProducto<IValQ_Producto> | null,
+                                  limite=this.limitePaginaPredefinido, 
+                                  docInicial:any=null
+                                  ):IDoc$<Producto, IProducto<IValQ_Producto>>{
+        
+        //================================================
+        //configurar el pathColeccion solo para coleccion:
+        const pathColeccion = this._pathColeccion; 
+        const isColeccionGrup = false;       
+        //================================================================
+        //Configurar la query de esta lectura:
+        //esta query es una funcion que se cargará al behavior como filtro 
+        //al momento de que este se ejecute
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
+                      QFiltro: IQFiltro<IProducto<IValQ_Producto>>) => {
+
+            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+
+            //verificar si se tienen el valor a consultar
+            if (QFiltro.valQuery.precio) {
+
+                if (QFiltro.valQuery.precio.val) {
+
+                    //================================================================
+                    //consulta de igualdad especial para campos number (normales o dentro de 
+                    //campos map) en firestore.
+                    //por comportamiento estraño de firestore no se puede consultar 
+                    //y paginar igualdades en campos number (ni boolean) por lo que es 
+                    //necesario realizar esta extraña consulta en la cual se usa el valor
+                    //a igualar  ini con un limite maximo   iniFactor  que es agregarle
+                    //una unidad mas al   ini para poder realizar la consulta
+
+                    //ESTO NO FUNCIONA si se quiere iguaral y paginar:
+                    //cursorQueryRef = cursorQueryRef.where(this.model_Util.precio.nom, "==", ini) //NO SIRVE
+
+                    let ini = this.ModeloCtrl_Util.precio.formateoCampo(QFiltro.valQuery.precio.val); 
+                    let iniMaxFactor = ini + this.ModeloCtrl_Util.precio.maxFactorIgualdadQuery;
+                    cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.precio.nom, ">=", ini)
+                                     .where(this.ModeloCtrl_Util.precio.nom, "<", iniMaxFactor);
+                    //================================================================
+
+                }
+
+                if ((QFiltro.valQuery.precio.min ||
+                    QFiltro.valQuery.precio.max) &&
+                    !QFiltro.valQuery.precio.val) {
+                    //================================================================
+                    //consulta basica de entre minimo y maximo
+                    if (QFiltro.valQuery.precio.min &&
+                        QFiltro.valQuery.precio.max) {
+                        cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.precio.nom, ">=", QFiltro.valQuery.precio.min)
+                            .where(this.ModeloCtrl_Util.precio.nom, "<", QFiltro.valQuery.precio.max);
+                    } else {
+                        if (QFiltro.valQuery.precio.min) {
+                            cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.precio.nom, ">=", QFiltro.valQuery.precio.min);
+                        }
+                        if (QFiltro.valQuery.precio.max) {
+                            cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.precio.nom, "<=", QFiltro.valQuery.precio.max);
+                        }
+                    }
+                    //================================================================
+                }
+            }
+
+            //================================================================
+            //ordenar, limitar y prepaginar con docInicial
+            cursorQueryRef =  cursorQueryRef.orderBy(this.ModeloCtrl_Util.precio.nom, QFiltro.valQuery.precio._orden || "asc");
+            cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);  // 
+            if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);                    
+            }    
+            //================================================================
             
-            return this._afs.collection(this._pathColeccion, (ref)=>filtroDoc.query(ref, filtroDoc))
-                  .snapshotChanges()  //devuelve docs y metadata
-                  .pipe(
-                    map(actions => {
-                      let docsLeidos = actions.map(a => {
-                        const data = a.payload.doc.data() as Producto;
-                        const _id = a.payload.doc.id;
-                        return { _id, ...data };
-                      });                     
-                      //================================================================
-                      //Aqui realizar el codigo a ejecutar antes de entregar los docs
-                      //y que requiera operaciones adicionales a nivel de array 
-                      //como sumatorias agrupaciones y demas
-                      //sin embargo esto se deberia hacer con la libreria de rxJs
-
-                      //================================================================
-                      if (filtroDoc.isPaginar) {
-  
-                        if (filtroDoc.isPagReactivaFull == false) {
-                          if (docsLeidos.length > 0) {
-                            this.snapshotDocsIniciales[this.numPaginaActual + 1] = actions[actions.length -1].payload.doc;   
-                          }
-                          docsLeidos = this.configurarPagReactiva(docsLeidos, filtroDoc);
-                        } else {
-                          if (docsLeidos.length > 0) {
-                            this.snapshotDocsIniciales[idxPag + 1] = actions[actions.length -1].payload.doc;   
-                          }
-                          docsLeidos = this.configurarPagReactivaFull(docsLeidos, idxPag, filtroDoc);
-                        }                             
-                      }
-                      return docsLeidos;
-                    })                
-                  );
-            //================================================================                         
-          }))
-  }
-
-  //================================================================
-  //================================================================
-  // lectura de un solo documento por  path_id
-  leerDocPorPathId(filtroPathDoc_id$:BehaviorSubject<string>):Observable<Producto>{
-
-    return filtroPathDoc_id$
-    .pipe(switchMap(filtroPathDoc_id=>{
-
-      if (filtroPathDoc_id && filtroPathDoc_id != "") {
-
-        const doc_afs = <AngularFirestoreDocument<Producto>> this._afs.doc<Producto>(filtroPathDoc_id);
-        return doc_afs.valueChanges();     
-      } else {
-        //---falta probar y reparar--------
-        return of(null);
-      }
-
-    }))
-  }
-  //================================================================
-
-  // crearDoc_add(docNuevo:Producto | any){
-  //   return this._productosCollection.add(producto);
-  // }  
-
-  public pruebaIndexCrear = 0;
-  crearDoc_set(docNuevo?:Producto):Promise<Producto>{
-
-    //--------------------------------------------------
-    let loteNuevos = <Producto[]>[
-      {
-        _id:"",
-        nombre:"prueba12",
-        categoria: "prueba12",
-        precio: 400,
-        map_miscelanea:{
-          tipo:"vehiculo",
-          ruedas: 4
-        },
-        mapA_misc:[
-          {color: "cafe"},
-          {color: "verde"},
-          {color: "amarillo"}
-        ],
-        v_precioImpuesto : 120
-      },
-      {
-        _id:"",
-        nombre:"prueba13",
-        categoria: "prueba13",
-        precio: 400,
-        map_miscelanea:{
-          tipo:"vehiculo",
-          ruedas: 4
-        },
-        mapA_misc:[
-          {color: "cafe"},
-          {color: "verde"},
-          {color: "amarillo"}
-        ],
-        v_precioImpuesto : 120
-      },
-      {
-        _id:"",
-        nombre:"prueba14",
-        categoria: "prueba14",
-        precio: 400,
-        map_miscelanea:{
-          tipo:"vehiculo",
-          ruedas: 4
-        },
-        mapA_misc:[
-          {color: "cafe"},
-          {color: "verde"},
-          {color: "amarillo"}
-        ],
-        v_precioImpuesto : 120
-      },
-      {
-        _id:"",
-        nombre:"prueba15",
-        categoria: "prueba15",
-        precio: 400,
-        map_miscelanea:{
-          tipo:"vehiculo",
-          ruedas: 4
-        },
-        mapA_misc:[
-          {color: "cafe"},
-          {color: "verde"},
-          {color: "amarillo"}
-        ],
-        v_precioImpuesto : 120
-      },
-      {
-        _id:"",
-        nombre:"prueba16",
-        categoria: "prueba16",
-        precio: 400,
-        map_miscelanea:{
-          tipo:"vehiculo",
-          ruedas: 4
-        },
-        mapA_misc:[
-          {color: "cafe"},
-          {color: "verde"},
-          {color: "amarillo"}
-        ],
-        v_precioImpuesto : 120
-      },
-      {
-        _id:"",
-        nombre:"prueba17",
-        categoria: "prueba17",
-        precio: 400,
-        map_miscelanea:{
-          tipo:"vehiculo",
-          ruedas: 4
-        },
-        mapA_misc:[
-          {color: "cafe"},
-          {color: "verde"},
-          {color: "amarillo"}
-        ],
-        v_precioImpuesto : 120
-      },      
-    ];
-
-    if(this.pruebaIndexCrear < loteNuevos.length){
-      docNuevo = loteNuevos[this.pruebaIndexCrear];
-      this.pruebaIndexCrear++;
-    }else{
-      throw "eeee";
-    }
-    //--------------------------------------------------
-    //================================================================
-    //Configuracion de v_utiles antes de modificar y formatear doc
-    const v_utilesMod:Iv_PreModificar_Productos = {
-      config:{
-        isCrear : true,
-        orderIDKey : this.model_Util.getNumOrderKey(this.ultimoIDDoc),
-        pathColeccion : this._pathColeccion
-      }
-    };
-
-    docNuevo = this.model_Util.preCrearOActualizar(docNuevo, v_utilesMod);      
-    //================================================================
-
-    return new Promise<Producto>((resolve, reject)=>{
-      //================================================================
-      //Realizar la creacion
-      const refColeccion = this._afs.collection<Producto>(this._pathColeccion);
-      refColeccion.doc(docNuevo._id).set(docNuevo, { merge: true })
-      .then(()=>{
-        console.log(`el doc fue creado: ${docNuevo}` );
-        resolve(docNuevo);
-      })
-      .catch((err)=>{
-        console.log(`error al crear el producto: ${err}` );
-        reject(err);
-      });      
-      //================================================================
-    });
-  }  
-
-  actualizarDoc(docEditado?:Producto, isEditadoFuerte=false):Promise<Producto>{
-    //----------------[EN CONSTRUCCION]----------------
-    docEditado = <Producto>{
-      _id:"1-9c73bc52fc92837d",
-      // nombre:"Spark GT",
-      // categoria: "carro",
-      // precio: 140,
-      map_miscelanea:{
-        tipo:"vehiculo",
-        ruedas: 4
-      },
-      // mapA_misc:[
-      //   {color: "rojo"},
-      //   {color: "Morado"}
-      // ],
-      v_precioImpuesto : 120
+            return cursorQueryRef;
+        };
+        //================================================================
+        //Configurar el filtro con las propiedades adicionales como:
+        //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
+        //el orden y demas propiedades
+        const QFiltro:IQFiltro<IProducto<IValQ_Producto>> = {
+            query : query,
+            docInicial : docInicial,
+            limite: limite,
+            tipoPaginar : EtipoPaginar.Simple,
+            valQuery : (valQuery && valQuery != null)? valQuery : <IProducto<IValQ_Producto>>{precio:{_orden:"asc"}}
+        }        
+        //================================================================
+        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
     }    
-    //------------------------------------------------
+
+    public getProductosPorMiscRuedas$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+                                     RFS:IRunFunSuscribe<Producto>, 
+                                     valQuery:IProducto<IValQ_Producto> | null, 
+                                     limite=this.limitePaginaPredefinido, 
+                                     docInicial:any=null
+                                     ):IDoc$<Producto, IProducto<IValQ_Producto>>{
+        
+        //================================================
+        //configurar el pathColeccion solo para coleccion:
+        const pathColeccion = this._pathColeccion; 
+        const isColeccionGrup = false;       
+        //================================================================
+        //Configurar la query de esta lectura:
+        //esta query es una funcion que se cargará al behavior como filtro 
+        //al momento de que este se ejecute
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
+                      QFiltro: IQFiltro<IProducto<IValQ_Producto>>) => {
+
+            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+
+            //verificar si se tienen el valor a consultar
+            if (QFiltro.valQuery.map_miscelanea.ruedas) {
+    
+                if (QFiltro.valQuery.map_miscelanea.ruedas.val) {
+    
+                    //================================================================
+                    //consulta de igualdad especial para campos number (normales o dentro de 
+                    //campos map) en firestore.
+                    //por comportamiento estraño de firestore no se puede consultar 
+                    //y paginar igualdades en campos number (ni boolean) por lo que es 
+                    //necesario realizar esta extraña consulta en la cual se usa el valor
+                    //a igualar  ini con un limite maximo   iniFactor  que es agregarle
+                    //una unidad mas al   ini para poder realizar la consulta
+    
+                    //ESTO NO FUNCIONA si se quiere iguara y paginar:
+                    //cursorQueryRef = cursorQueryRef.where(this.model_Util.precio.nom, "==", ini) //NO SIRVE
+    
+                    let ini = QFiltro.valQuery.map_miscelanea.ruedas.val;
+                    let iniFactor = ini + this.ModeloCtrl_Util.precio.maxFactorIgualdadQuery;
+                    cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.map_miscelanea.util.ruedas.nomMapPath, ">=", ini)
+                                                    .where(this.ModeloCtrl_Util.map_miscelanea.util.ruedas.nomMapPath, "<", iniFactor);
+                    //================================================================
+                }
+    
+                if ((QFiltro.valQuery.map_miscelanea.ruedas.min ||
+                    QFiltro.valQuery.map_miscelanea.ruedas.max) &&
+                    !QFiltro.valQuery.map_miscelanea.ruedas.val) {
+                    //================================================================
+                    //consulta basica de entre minimo y maximo
+                    if (QFiltro.valQuery.map_miscelanea.ruedas.min &&
+                        QFiltro.valQuery.map_miscelanea.ruedas.max) {
+    
+                        cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.map_miscelanea.util.ruedas.nomMapPath, ">=", QFiltro.valQuery.map_miscelanea.ruedas.min)
+                            .where(this.ModeloCtrl_Util.map_miscelanea.util.ruedas.nomMapPath, "<", QFiltro.valQuery.map_miscelanea.ruedas.max);
+    
+                    } else {
+                        if (QFiltro.valQuery.map_miscelanea.ruedas.min) {
+                            cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.map_miscelanea.util.ruedas.nomMapPath, ">=", QFiltro.valQuery.map_miscelanea.ruedas.min);
+                        }
+                        if (QFiltro.valQuery.map_miscelanea.ruedas.max) {
+                            cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.map_miscelanea.util.ruedas.nomMapPath, "<=", QFiltro.valQuery.map_miscelanea.ruedas.max);
+                        }
+                    }
+
+                    //================================================================
+                }
+            }
+    
+            //================================================================
+            //ordenar, limitar y prepaginar con docInicial
+            cursorQueryRef =  cursorQueryRef.orderBy(this.ModeloCtrl_Util.map_miscelanea.util.ruedas.nomMapPath, QFiltro.valQuery.map_miscelanea.ruedas._orden || null);
+            cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);  
+            if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);                    
+            }    
+            //================================================================                              
+            return cursorQueryRef;
+        };
+        //================================================================
+        //Configurar el filtro con las propiedades adicionales como:
+        //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
+        //el orden y demas propiedades
+        const QFiltro:IQFiltro<IProducto<IValQ_Producto>> = {
+            query : query,
+            docInicial : docInicial,
+            limite: limite,
+            tipoPaginar : EtipoPaginar.Simple,
+            valQuery : (valQuery && valQuery != null)? valQuery : <IProducto<IValQ_Producto>>{map_miscelanea:{ruedas:{_orden:"asc"}}}
+        }        
+        //================================================================
+        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
+    }    
+
+    public getProductosPorArrayNormal$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+                                       RFS:IRunFunSuscribe<Producto>, 
+                                       valQuery:IProducto<IValQ_Producto> | null,
+                                       limite=this.limitePaginaPredefinido,
+                                       docInicial:any=null
+                                       ):IDoc$<Producto, IProducto<IValQ_Producto>>{
+        
+        //================================================
+        //configurar el pathColeccion solo para coleccion:
+        const pathColeccion = this._pathColeccion; 
+        const isColeccionGrup = false;       
+        //================================================================
+        //Configurar la query de esta lectura:
+        //esta query es una funcion que se cargará al behavior como filtro 
+        //al momento de que este se ejecute
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
+                      QFiltro: IQFiltro<IProducto<IValQ_Producto>>) => {
+
+            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+
+            //================================================================
+            //los campos de tipo array y mapA_ REQUIEREN CREAR INDICE EN FIRESTORE
+            //IMPORTANTE: los campos array y mapA_ tienen pocas opciones de consulta
+            //intentar no usarlos para procesar consultas 
+            cursorQueryRef = cursorQueryRef.where("arrayNormal", "array-contains", "negro");
+
+            //================================================================
+            //ordenar, limitar y prepaginar con docInicial    
+            cursorQueryRef = cursorQueryRef.orderBy("arrayNormal", "asc");
+            cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);  // 
+            if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);                    
+            }    
+            //================================================================
+    
+            return cursorQueryRef;
+        };
+        //================================================================
+        //Configurar el filtro con las propiedades adicionales como:
+        //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
+        //el orden y demas propiedades
+        const QFiltro:IQFiltro<IProducto<IValQ_Producto>> = {
+            query : query,
+            docInicial : docInicial,
+            limite: limite,
+            tipoPaginar : EtipoPaginar.Simple,
+            valQuery : valQuery //-posible error
+        }        
+        //================================================================
+        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
+    }   
+    //------------------------------------------------------------------------------------------------------------------------------
+    //================================================================================================================================
+    /*get{Modelo}_Path_Id$*/
+    //permite consultar un solo doc siempre y cuando se tenga el path_id
+    //Parametros:
+    //doc$:
+    //objeto control$ con toda la informacion de la lectura reactiva (aunque 
+    //puede recibirse  null  si es la primera vez)
+    //
+    //RFS:
+    //objeto con las funciones next() y error() para ejecutar una vez este suscrito
+    //
+    //path_Id:
+    //obligatorio, contiene el la RUTA CON ID del documento a leer, solo por 
+    //primera vez se recibe un null y eso en casos que no se requiera 
+    //inmediatamente obtener dicho doc
+    //
+    public getProductos_Path_Id$(docPath_Id$:IDocPath_Id$<Producto>, 
+                                RFS:IRunFunSuscribe<Producto>, 
+                                path_Id:string | null 
+                                ):IDocPath_Id$<Producto>{
+
+        return this.leerDocPath_Id$(docPath_Id$, RFS, path_Id);
+    }
+
+    //================================================================================================================================
+    /*paginarDocs*/
+    //este metodo determina y detecta el tipo de paginacion y solicita el
+    //lote de documentos de acuerdo a los parametros
+    //Parametros:
+    //doc$:
+    //objeto control$ con toda la informacion de la lectura reactiva 
+    //(aqui NO PUEDE RECIBIRSE NULL)
+    //
+    //direccionPaginacion:
+    //se debe recibir alguna de las 2 opciones "previo" | "siguiente"
+    //Recordar que no todos los tipos de paginacion aceptan "previo"
+    //
+    public paginarProductos$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>>, 
+                            direccionPaginacion: "previo" | "siguiente"
+                            ):IDoc$<Producto, IProducto<IValQ_Producto>> {
+
+        return this.paginarDocs(doc$, direccionPaginacion);
+    }
+    //================================================================================================================================
+
+    //TEST----------------------------------------------
+    public pruebaIndexCrear = 0;
+    //--------------------------------------------------    
+
+    //================================================================================================================================    
+    /*crear{modelo}*/
+    //permite la creacion de un doc en tipo set
+    //Parametros:
+    //
+    //docNuevo:
+    //el doc a crear
+    //
+    //v_PreMod?
+    //objeto opcional para pre configurar 
+    //y formatear el doc (decorativos)
+    //
+    public crearProducto(docNuevo: Producto, v_PreMod?:Iv_PreModificar_Producto): Promise<void> {
+
+        //TEST----------------------------------------------
+        let numId = this.ModeloCtrl_Util.getNumOrderKey(this.ultimoID);
+        let loteNuevos = <Producto[]>[
+            {
+                _id: "",
+                nombre: `Prueba${numId}`,
+                categoria: `Prueba${numId}`,
+                precio: 400,
+                map_miscelanea: {
+                    tipo: "vehiculo",
+                    ruedas: 4
+                },
+                mapA_misc: [
+                    { color: "cafe" },
+                    { color: "verde" },
+                    { color: "amarillo" }
+                ],
+                v_precioImpuesto: 120
+            },
+            {
+                _id: "",
+                nombre: `Prueba${numId}`,
+                categoria: `Prueba${numId}`,
+                precio: 400,
+                map_miscelanea: {
+                    tipo: "vehiculo",
+                    ruedas: 4
+                },
+                mapA_misc: [
+                    { color: "cafe" },
+                    { color: "verde" },
+                    { color: "amarillo" }
+                ],
+                v_precioImpuesto: 120
+            },
+            {
+                _id: "",
+                nombre: `Prueba${numId}`,
+                categoria: `Prueba${numId}`,
+                precio: 400,
+                map_miscelanea: {
+                    tipo: "vehiculo",
+                    ruedas: 4
+                },
+                mapA_misc: [
+                    { color: "cafe" },
+                    { color: "verde" },
+                    { color: "amarillo" }
+                ],
+                v_precioImpuesto: 120
+            },
+            {
+                _id: "",
+                nombre: `Prueba${numId}`,
+                categoria: `Prueba${numId}`,
+                precio: 400,
+                map_miscelanea: {
+                    tipo: "vehiculo",
+                    ruedas: 4
+                },
+                mapA_misc: [
+                    { color: "cafe" },
+                    { color: "verde" },
+                    { color: "amarillo" }
+                ],
+                v_precioImpuesto: 120
+            },
+            {
+                _id: "",
+                nombre: `Prueba${numId}`,
+                categoria: `Prueba${numId}`,
+                precio: 400,
+                map_miscelanea: {
+                    tipo: "vehiculo",
+                    ruedas: 4
+                },
+                mapA_misc: [
+                    { color: "cafe" },
+                    { color: "verde" },
+                    { color: "amarillo" }
+                ],
+                v_precioImpuesto: 120
+            },
+            {
+                _id: "",
+                nombre: `Prueba${numId}`,
+                categoria: `Prueba${numId}`,
+                precio: 400,
+                map_miscelanea: {
+                    tipo: "vehiculo",
+                    ruedas: 4
+                },
+                mapA_misc: [
+                    { color: "cafe" },
+                    { color: "verde" },
+                    { color: "amarillo" }
+                ],
+                v_precioImpuesto: 120
+            },
+        ];
+
+        if (this.pruebaIndexCrear < loteNuevos.length) {
+            docNuevo = loteNuevos[this.pruebaIndexCrear];
+            this.pruebaIndexCrear++;
+        } else {
+            throw "eeee";
+        }
+        //--------------------------------------------------
+        //================================================================
+        //pre modificacion y formateo del doc
+        docNuevo = this.ModeloCtrl_Util.preCrearOActualizar(docNuevo, this.ultimoID, true, false, v_PreMod);
+        //================================================================
+        return this.crearDoc(docNuevo, this.ModeloCtrl_Util.getPathColeccion());
+    }
+
     //================================================================
-    //Configuracion de v_utiles antes de modificar y formatear doc
-    const v_utilesMod:Iv_PreModificar_Productos = {
-      config:{
-        isCrear : false,
-        isEditadoFuerte : false
-      }
+    /*actualizar{modelo}*/
+    //permite la modificacion de un doc por medio de su _id
+    //
+    //Parametros:
+    //
+    //docEditado:
+    //el doc a editar
+    //
+    //isEditadoFuerte:
+    //determina si se REEMPLAZAN los campos map_ y mapA_
+    //o no se modifican
+    //
+    //v_PreMod?
+    //objeto opcional para pre configurar 
+    //y formatear el doc (decorativos)
+    //
+    public actualizarProducto(docEditado: Producto, isEditadoFuerte = false, v_PreMod?:Iv_PreModificar_Producto): Promise<void> {
+        //TEST--------------------------------------------
+        docEditado = <Producto>{
+            _id: "1-9c73bc52fc92837d",
+            // nombre:"Spark GT",
+            // categoria: "carro",
+            // precio: 140,
+            map_miscelanea: {
+                tipo: "vehiculo",
+                ruedas: 4
+            },
+            // mapA_misc:[
+            //   {color: "rojo"},
+            //   {color: "Morado"}
+            // ],
+            v_precioImpuesto: 120
+        }
+        //------------------------------------------------
+        //================================================================
+        //pre modificacion y formateo del doc
+        docEditado = this.ModeloCtrl_Util.preCrearOActualizar(docEditado, this.ultimoID, false, isEditadoFuerte, v_PreMod);
+        //================================================================
+        return this.actualizarDoc(docEditado, this.ModeloCtrl_Util.getPathColeccion());
+
+    }
+    //================================================================
+    /*eliminar {modelo}*/
+    //permite la eliminacion de un doc por medio del _id
+    //Parametros:
+    //
+    //_id:
+    //estring con id a eliminar
+    //
+    public eliminarProducto(_id: string): Promise<void> {
+        //Test-------------------------------------------
+        _id = "2-a940c69dbf6536cc";
+        //------------------------------------------------
+        return this.eliminarDoc(_id, this.ModeloCtrl_Util.getPathColeccion());
+    }
+
+    //================================================================================================================================
+    //desuscribir observables pricipales
+    public unsubscribeAllProductos$(docs$:IDoc$<Producto, IProducto<IValQ_Producto>>[], docPath_Id$:IDocPath_Id$<Producto>):void {
+        
+        //================================================
+        //agrego el control doc$ que hace referencia 
+        //al monitoreo interoa del ultimoDoc
+        docs$.push(this.ultimoDoc$);
+    
+        //================================================
+        //se desuscriben y eliminan TODOS los controles$ que 
+        //hacen referencia a este controlador    
+        for (let i = 0; i < docs$.length; i++) {
+            docs$[i] = this.unsubscribeDoc$(docs$[i]);          
+            
+        }
+        //tambien el control especial
+        docPath_Id$ = this.unsubscribeDocsPath_Id$(docPath_Id$)   
+        //================================================
+    }
+    //================================================================
+
+}
+
+//================================================================
+/*{Modelo}Ctrl_Util*/
+//las clases que heredan  Ctrl_Util y que implementa la interfaz 
+//IModelo proporcionan funciones y utilidades enfocadas al manejo 
+//de los controllers o services de cada modelo, entre sus funcionalidades
+//estan: validaciones,formateo, nom, selecciones entre otros y se enfoca 
+//en atomizar dichas funcionalidades para cada campo o en conjunto para 
+//todo el modelo
+//
+//IMPORTANTE: en esta clase si se deberia agregar metodos y demas funcionalidades
+
+export class ProductoCtrl_Util extends Ctrl_Util<Producto, IProducto<any>, ProductoCtrl_Util> 
+                               implements IProducto<any> {
+
+    //================================================================
+    //atributos con funcionalidades para cada campo:
+    _id:IUtilCampo<string, any> = {
+        nom:"_id",
+    };
+    _pathDoc:IUtilCampo<string, any> = {
+        nom:"_pathDoc",
     };
 
-    docEditado = this.model_Util.preCrearOActualizar(docEditado, v_utilesMod);      
+    nombre:IUtilCampo<string, any> = {
+        nom : "nombre",
+        isRequerido:true,
+        formateoCampo:(val)=>{
+            if (val && val != null) {
+                const util = new ProductoCtrl_Util();
+                const c_util = util.nombre;
+                val = val.trim();                
+            }
+            return val
+        },
+    };
+    precio:IUtilCampo<number, any> = {
+        nom:"precio",
+        isRequerido:true,
+        maxFactorIgualdadQuery : 1,
+        expFactorRedondeo : null,
+        formateoCampo:(val)=>{
+            if (val && val != null) {
+                const util = new ProductoCtrl_Util();
+                const c_util = util.precio;
+                //demostracion de ajuste de redondeo --funcional mas no necesario por ahora--:
+                val = util.ajustarDecimales("round", val, c_util.expFactorRedondeo);                
+            }
+            return val
+        },
+    };
+    categoria:IUtilCampo<string, any> = {
+        nom:"categoria"
+    };
+    map_miscelanea:IUtilCampo<IMap_miscelanea<any>, Map_miscelanea_Util> = {
+        nom:"map_miscelanea",
+        isMap:true,
+        util: new Map_miscelanea_Util()
+
+    }; 
+    mapA_misc:IUtilCampo<IMapA_misc<any>, MapA_misc_Util> ={
+        nom : "mapA_misc",
+        isMap : true,
+        isArray : true,
+        util : new MapA_misc_Util()
+    }; 
+
+    emb_SubColeccion:IUtilCampo<any, any> = {
+        nom : "emb_SubColeccion",
+        isEmbebido : true
+    }
+
+    v_precioImpuesto:IUtilCampo<number, any> = {
+        nom:"v_precioImpuesto",
+        isVirtual:true
+    }    
     //================================================================
-    return new Promise<Producto>((resolve, reject)=>{
-      //================================================================
-      //Realizar la actualizacion
-      const refColeccion = this._afs.collection<Producto>(this._pathColeccion);
-      refColeccion.doc(docEditado._id).update(docEditado)
-      .then(()=>{
-        console.log(`el doc fue Editado: ${docEditado}` );
-        resolve(docEditado);
-      })
-      .catch((err)=>{
-        console.log(`error al editar el producto: ${err}` );
-        reject(err);
-      });
-      //================================================================
-    });
 
-  }
-
-  eliminarDoc(_id? : string):Promise<string>{
-    //----------------[EN CONSTRUCCION]----------------
-    _id = "2-a940c69dbf6536cc";     
-    //------------------------------------------------
-    return new Promise<string>((resolve, reject)=>{
-
-      const refColeccion = this._afs.collection<Producto>(this._pathColeccion);
-      refColeccion.doc(_id).delete()
-      .then(()=>{
-        resolve(`documento con id: ${_id} fué borrado`);
-      })
-      .catch((err)=>{
-        console.log(`error al borrar el documento: ${err}` );
-        reject(err);
-      });
-    });
-  }
-
-  //================================================================================================================================
-  //metodos Utilitarios:
-  //================================================================
-  //reinicializar parametros especiales de paginacion
-  private resetParamsPaginacion(filtroDoc:IQFiltro_Producto){
-    this._listDocsReactiveFull = [];
-    this.snapshotDocsIniciales = [filtroDoc.docInicial];
-    this.numPaginaActual = 0;
-  }
-  //================================================================
-  //inicializar behaviors y subscripciones refernete a consultas
-  public inicializarNuevaQueryDoc$(Docs$:IProductos$, filtroDoc:IQFiltro_Producto, next:(docRes)=>void, error:(err)=>void):IProductos${
-
-    if (!Docs$ || !Docs$.behaviors || !Docs$.suscriptions) {
-      Docs$ = {
-        behaviors:[],
-        suscriptions:[]
-      };
+    constructor() {
+        super();
     }
-    
-    this.resetParamsPaginacion(filtroDoc);
-
-    if (filtroDoc.isPagReactivaFull == false) {
-      if (Docs$.behaviors.length == 0 && Docs$.suscriptions.length == 0) {
-        Docs$.behaviors[0] = new BehaviorSubject<IQFiltro_Producto>(filtroDoc);
-        Docs$.suscriptions[0] = this.configurarBehaviorRes(Docs$.behaviors[0]).subscribe({next:next, error:error});   
-      } else {
-        Docs$.behaviors[0].next(filtroDoc);
-      }
-      
-    } else {
-      if (Docs$.behaviors.length > 0 && Docs$.behaviors.length == Docs$.suscriptions.length) {
-
-        while (Docs$.suscriptions.length > 1) {
-          Docs$.suscriptions[Docs$.behaviors.length-1].unsubscribe();
-          Docs$.suscriptions.pop();
-          Docs$.behaviors.pop()
+    //================================================================
+    /*getNomColeccion()*/
+    //obtener el nombre de la coleccion o subcoleccion SIN PATH
+    public getNomColeccion():string{
+        return "Productos";
+    }    
+    //================================================================
+    /*getPathColeccion()*/
+    //obtener el path de la coleccion o subcoleccion,
+    //en las colecciones devuelve el mismo nom ya qeu son Raiz
+    //Parametros:
+    //
+    //pathBase ->  path complemento para construir el el path completo
+    //             util para las subcolecciones
+    public getPathColeccion(pathBase:string=""):string{
+        if (pathBase == "") {
+            return `${this.getNomColeccion()}`;
+        }else{
+            return `${pathBase}/${this.getNomColeccion()}`;
         }
-        Docs$.behaviors[0].next(filtroDoc);
-      
-      }else{
-        Docs$.behaviors[0] = new BehaviorSubject<IQFiltro_Producto>(filtroDoc);
-        Docs$.suscriptions[0] = this.configurarBehaviorRes(Docs$.behaviors[0]).subscribe({next:next, error:error});   
-      }
-    }
-    return Docs$;
-  }
+    }    
+    //================================================================
+    /*preCrearOActualizar()*/
+    //metodo que debe ejecutarse antes de crear o actualizar un documento
+    //Parametros:
+    //doc -> el documento que se desea crear o actualizar
+    //v_utilesPreMod ->  objeto que contiene datos para enriqueser o realizar operaciones
+    //                   de acuerdo a la coleccion (determinar si se crea o se actualiza, generar _ids y )
 
-  public inicializarNuevaQueryDocPath_Id$(DocsPath_Id$:IProductoPath_Id$, next:(docRes)=>void, error:(err)=>void, _id?:string):IProductoPath_Id${
-    if (DocsPath_Id$.behavior == null && DocsPath_Id$.suscription) {
-      DocsPath_Id$.behavior = new BehaviorSubject<string|null>(_id || null); 
-      DocsPath_Id$.suscription = this.leerDocPorPathId(DocsPath_Id$.behavior).subscribe({next:next, error:error});        
-    } else {
-      if (_id) {
-        DocsPath_Id$.behavior.next(_id);        
-      }
-    }
-    return DocsPath_Id$;
-  }
-  //================================================================
-  //paginar Docs:
-  //este metodo determina detecta el tipo de paginacion y solicita el
-  //lote de documentos de acuerdo a lso parametros
-  public paginarDocs(Docs$:IProductos$, listDocs:Producto[], direccionPaginacion:"previo"|"siguiente", next?:(docRes)=>void, error?:(err)=>void):IProductos${
-
-    const filtroDoc = Docs$.behaviors[Docs$.behaviors.length -1].getValue();     
-    
-    if (filtroDoc.isPagReactivaFull == false) {
-      
-      if (direccionPaginacion == "siguiente" &&
-      listDocs.length == filtroDoc.limite) {
-        filtroDoc.docInicial = this.snapshotDocsIniciales[this.numPaginaActual + 1];
-        Docs$.behaviors[0].next(filtroDoc);
-        this.numPaginaActual++;        
-      }
-      if (direccionPaginacion == "previo" &&
-      listDocs.length > 0 && this.numPaginaActual > 0) {
-        filtroDoc.docInicial = this.snapshotDocsIniciales[this.numPaginaActual - 1];
-        Docs$.behaviors[0].next(filtroDoc);
-        this.numPaginaActual--;
-      }
-    } else {
-
-      if (direccionPaginacion != "previo") {
-
-        let limiteLote = (this.numPaginaActual + 1) * filtroDoc.limite;
-        if(listDocs.length == limiteLote ){
-          
-          filtroDoc.docInicial = this.snapshotDocsIniciales[this.numPaginaActual + 1];
-          Docs$.behaviors.push(new BehaviorSubject<IQFiltro_Producto>(filtroDoc));
-          this.numPaginaActual++;
-  
-          if (this.numPaginaActual > (Docs$.suscriptions.length -1)) {
-            Docs$.suscriptions[this.numPaginaActual] = this.configurarBehaviorRes(Docs$.behaviors[Docs$.behaviors.length-1]).subscribe({next:next, error:error});    
-          }
+    public preCrearOActualizar(doc:Producto,
+                                ultimo_id:string,
+                                isCrear:boolean=true,
+                                isEditadoFuerte=false, 
+                                v_PreMod?:Iv_PreModificar_Producto
+                              ):Producto{
+        
+        //================================================================
+        //se determina si se desea crear el documento para su configuracion
+        if (isCrear) {
+            //================================================================
+            //aqui se genera el nuevo _id a guardar
+            doc._id = (ultimo_id && typeof ultimo_id === 'string') ?
+                      this.generarIds(this.getNumOrderKey(ultimo_id)) : 
+                      this.generarIds(0);               
+           //================================================================
+            //aqui se genera el   _pathDoc   del doc a crear, en el caso
+            // de las colecciones SIEMPRE será el pathColeccion estandar
+            //IMPORTANTE: SOLO PARA COLECCIONES
+            doc._pathDoc = `${this.getPathColeccion()}/${doc._id}`;
+            //================================================================
         }
-
-      }
-    }
-    return Docs$;
-  }
-   
-  //================================================================
-  //configuracion de paginacion reactiva estandar
-  private configurarPagReactiva(docsRes:Producto[], configFiltro:IQFiltro_Producto):Producto[]{
-    //---falta implementar----
-    return docsRes;
-  }
-  //================================================================
-  //configuracion de paginacion reactiva Full
-  private configurarPagReactivaFull(docsRes:Producto[], idxPag:number, filtroDoc:IQFiltro_Producto):Producto[]{
-    
-    let iniIdxSeccion = idxPag * filtroDoc.limite;
-    let finIdxSeccion = (idxPag + 1) * filtroDoc.limite;
-
-    let iniListDocsParcial:Producto[] = [];
-    let finListDocsParcial:Producto[] = [];
-    
-    if (this._listDocsReactiveFull.length >= iniIdxSeccion) {
-      iniListDocsParcial = this._listDocsReactiveFull.slice(0, iniIdxSeccion);
-    }
-    if (this._listDocsReactiveFull.length >= finIdxSeccion) {
-      finListDocsParcial = this._listDocsReactiveFull.slice(finIdxSeccion);
-    }              
-
-    let lsD = iniListDocsParcial.concat(docsRes).concat(finListDocsParcial);
-    if (lsD.length > 0) {
-      this._listDocsReactiveFull = <Producto[]>this.model_Util.eliminarItemsDuplicadosArray(lsD, this.model_Util._id.nom);
-    
-    } else {
-      this._listDocsReactiveFull = [];
-    }   
-
-    return this._listDocsReactiveFull;
-  }
-
-  //================================================================
-  //liberador de memoria paginacion reactiva full
-  //(desuscribe los observables que no estan siendo utilizados)
-  public adminMemoriaReactivaFull(Docs$:IProductos$):IProductos$ {
-
-    const filtroDoc = Docs$.behaviors[Docs$.behaviors.length-1].getValue();
-    
-    if (Docs$.suscriptions.length && Docs$.behaviors.length) {
-      let pagRealEntero = (this._listDocsReactiveFull.length / filtroDoc.limite) + 1;
-      let pagActualEntero = this.numPaginaActual + 1; 
-      if (pagActualEntero >= pagRealEntero) {
-        let diferencialExcesoMemoria = Math.floor(pagActualEntero/pagRealEntero) ;
-        for (let i = 0; i < diferencialExcesoMemoria; i++) {
-          //================================================================
-          //liberar memoria de obserbables no usados
-          Docs$.suscriptions[Docs$.suscriptions.length -1].unsubscribe();
-          Docs$.suscriptions.pop();
-          Docs$.behaviors.pop();
-          this.snapshotDocsIniciales.pop();
-          this.numPaginaActual--;                
-          //================================================================
-          
+        //----------------[EN CONSTRUCCION]----------------
+        if (v_PreMod) {
+            
         }
-      }       
+        //------------------------------------------------
+        //================================================================
+        //aqui se formatean los datos del documento (se quitan campos 
+        //inecesarios (no almacenables))
+        doc = this.formatearDoc(doc, this, isEditadoFuerte);
+        //================================================================                               
+        return doc;       
     }
-    
-    return Docs$;
 
-  }    
-  //================================================================
-  //desuscribir observables pricipales
-  public unsubscribePrincipales(Docs$:IProductos$, DocsPath_Id$:IProductoPath_Id$){
-    while (Docs$.behaviors.length > 0) {
-      Docs$.suscriptions[Docs$.behaviors.length-1].unsubscribe();
-      Docs$.suscriptions.pop();
-      Docs$.behaviors.pop()
+    //================================================================
+    /*preLeerDocs()*/
+    //metodo que debe ejecutarse antes de entregar la lectura de documentos
+    //al correspondiente componente, esta metodo se ejecuta en CADA 
+    //DOCUMENTO LEIDO (documento por documento)
+    //Parametros:
+    //docs ->  documento o documentos que se leyeron de firebase
+    //v_utilesPreLeer-> objeto que contiene datos para enriqueser o realizar operaciones
+    //          (por ejemplo cargar los campos virtuales) antes de entregar a
+    //          la vista o componente correspondiente
+    public preLeerDocs(docs:Producto[] | Producto, v_utilesPreLeer:Iv_PreLeer_Producto):Producto[] | Producto{
+
+        if(docs){
+            if(Array.isArray(docs)){
+                docs = docs.map((doc)=>{
+                    //================================================================
+                    //aqui todo lo referente a la modificacion de cada documento antes 
+                    //de devolverlo
+                    doc.v_precioImpuesto = ((doc.precio * v_utilesPreLeer.imp)/100) + doc.precio;
+                    //================================================================
+                    return doc;
+                });
+            }else{
+                //================================================================
+                //aqui todo lo referente a la modificacion de cada documento antes 
+                //de devolverlo
+                docs.v_precioImpuesto = ((docs.precio * v_utilesPreLeer.imp)/100) + docs.precio;
+                //================================================================
+            }
+        }
+        //retornar doc ya formateado
+        return docs;
     }
-    DocsPath_Id$.suscription.unsubscribe();
-    DocsPath_Id$.behavior = null;
+}
+//================================================================================================================================
+/*Clases Ctrl_Util para campo especiales (map_ y mapA_)*/
+//estas clases por ahora no necesitan extender a la clase _Util
+//ya que no requieren metodos especiales, si se llegara a requerir
+//(por ejemplo en las propiedades de validate o formato que son funciones
+//se deberá usar declarar la clase util de la coleccion padre dentro de la 
+//funcion y usar los metodos que se requieran)
+export class  Map_miscelanea_Util implements IMap_miscelanea<any>{
+    ruedas:IUtilCampo<number, any> = {
+        nom:"ruedas",
+        nomMapPath: "map_miscelanea.ruedas",
+        maxFactorIgualdadQuery : 1,
+        expFactorRedondeo : null
+    };
 
-    this._UltimoDocSuscription.unsubscribe();
-  }
-  
-  //================================================================
-  //================================================================================================================================
+    tipo:IUtilCampo<string, any> = {
+        nom:"tipo",
+        nomMapPath: "map_miscelanea.tipo"
+    };
 }
 
-export interface IProductos${
-  behaviors:BehaviorSubject<IQFiltro_Producto>[],
-  suscriptions:Subscription[]
+export class  MapA_misc_Util implements IMapA_misc<any>{
+    color:IUtilCampo<string, any> = {
+        nom:"color",
+        nomMapPath: "map_miscelanea.color", //por ahora, no sirve en array
+        maxFactorIgualdadQuery : 1
+    };
 }
 
-export interface IProductoPath_Id${
-  behavior:BehaviorSubject<string|null>,
-  suscription:Subscription
-}
+//================================================================================================================================
 
 
 

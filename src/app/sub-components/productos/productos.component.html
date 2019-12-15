@@ -14,7 +14,7 @@
       </th>
     </thead>
     <tbody>
-      <tr *ngFor="let item of this.listProductos">
+      <tr *ngFor="let item of this.productosList">
         <td>{{item._id}}</td>
         <td>{{item.nombre}}</td>
         <td>{{item.categoria}}</td>
@@ -28,8 +28,16 @@
 <br/>
 <button (click)="this.paginarAnterior()">anterior</button>
 <button (click)="this.paginarSiguiente()">siguiente</button>
-<button (click)="this.consultarTODO()">consultarTODO</button>
-<button (click)="this.consultarNombre()">consultarNombre</button>
+<br/>
+<button (click)="this.consultarProducto('Todo')">consultarTODO</button>
+<button (click)="this.consultarProducto('_id')">consultarId</button>
+<button (click)="this.consultarProducto('Nombre')">consultarNombre</button>
+<button (click)="this.consultarProducto('Precio')">consultarPrecio</button>
+<button (click)="this.consultarProducto('Ruedas')">consultarMiscelaneo.Ruedas</button>
+<button (click)="this.consultarProducto('ArrayNormal')">consultarArrayNormal</button>
+<br/>
+<button (click)="this.consultarProducto('SubColGrup')">leerSubcolecciongrup</button>
+<br/>
 <br/>
 <h1>Filtro</h1>
 <input type="text" name="" #CampoFiltroNombre id="" value="">
@@ -45,7 +53,7 @@
 
 <br/>
 <div class="container">
-  <form [formGroup]="this.formCrearOActualizar" (ngSubmit)="crear()">
+  <form [formGroup]="this.formCrearOActualizar" (ngSubmit)="this.crear_set()">
 
     <label for="nombre">Nombre:</label>
     <input name="nombre" type="text" formControlName="nombre" #nombre>
@@ -63,7 +71,8 @@
 
 <br/>
 <br/>
-<button (click)="this.crear_set()">crear_set()</button>
+<button (click)="this.crear_set('Col')">crear_set("Col")</button>
+<button (click)="this.crear_set('subCol')">crear_set("subCol")</button>
 <br/>
 <br/>
 <button (click)="this.editar()">editar()</button>
