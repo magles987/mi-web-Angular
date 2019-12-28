@@ -12,13 +12,13 @@
 export const environment = {
   production: false,
   firebase : {
-    apiKey: "AIzaSyB5htWVKU09imVbTR9bz23iAQsFFhXDQ7g",
-    authDomain: "prueba1-87d2f.firebaseapp.com",
-    databaseURL: "https://prueba1-87d2f.firebaseio.com",
-    projectId: "prueba1-87d2f",
-    storageBucket: "prueba1-87d2f.appspot.com",
-    messagingSenderId: "567889637995",
-    appId: "1:567889637995:web:a2bcd830f0cc5ad5"
+    apiKey: "XXXXXXXX",
+    authDomain: "XXXXXXXXX.firebaseapp.com",
+    databaseURL: "https://XXXXXXXX.firebaseio.com",
+    projectId: "XXXXXXXXX",
+    storageBucket: "XXXXXXXXXX.appspot.com",
+    messagingSenderId: "XXXXXXXXX",
+    appId: "1:XXXXXXXX:web:XXXXXXX"
   }
 };
 
