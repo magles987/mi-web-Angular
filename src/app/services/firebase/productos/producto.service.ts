@@ -7,43 +7,11 @@ import { AngularFirestore, AngularFirestoreCollection, AngularFirestoreDocument 
 import { Observable, observable, Subject, BehaviorSubject, } from 'rxjs';
 import { map, switchMap, } from 'rxjs/operators';
 
-import { IProducto, Producto, IMap_miscelanea, IMapA_misc } from '../../../models/firebase/productos/productos';
-import { Ctrl_Util, IUtilCampo, IValQ, Service_Util, EtipoPaginar, IQFiltro,IDoc$, IDocPath_Id$, IRunFunSuscribe } from '../_Util';
-import { emb_SubColeccionCtrl_Util } from './emb_subcoleccion.service';
+import { IProducto, Producto, IMap_miscelanea, IMapA_misc } from '../../../models/firebase/productos/producto';
+import { ProductoCtrl_Util, Map_miscelanea_Util, MapA_misc_Util, Iv_PreModificar_Producto, Iv_PreLeer_Producto, IValQ_Producto } from './productoCtrl_Util';
 
-//================================================================================================================================
-/*INTERFACES especiales para cado Modelo_util*/
-//Interfaces especiales para implementar contenedores de 
-//objetos utilitarios para los metodos Pre  
-//deben llevar el sufijo   _Modelo   del moedelo para no generar 
-//conflictos con otras colecciones cuando se haga   import
-//Ejemplo: Iv_PreLeer{aqui el sufijo de coleccion o subcoleccion}
+import { Service_Util, EtipoPaginar, IQFiltro,IDoc$, IpathDoc$, IRunFunSuscribe } from '../_Util';
 
-/*Iv_PreModificar_{Modelo}*/
-//OPCIONAL el agregar propiedades
-//contiene propiedades externar al modelo (mas especificamente IModelo)
-//para realizar calculos o enriquecer los docs leidos
-//se recomienda crear objetos de esta interfaz en la 
-//propiedad-funcion next de los objetos RFS
-export interface Iv_PreLeer_Producto{
-    imp:number;  //--solo para ejemplo---
-}
-
-/*Iv_PreModificar_{Modelo}*/
-//OPCIONAL el agregar propiedades
-//contiene propiedades externar al modelo (mas especificamente IModelo) 
-//para realizar calculos o enriquecer el doc a modificar (ya sea crear o editar) 
-export interface Iv_PreModificar_Producto{
-
-}
-
-/*IValQ_{Modelo}*/
-//OPCIONAL el agregar propiedades
-//contiene propiedades personalizadas para este modelo_util para 
-//construir querys personalizadas y especificas
-export interface IValQ_Producto extends IValQ{
-
-}
 //================================================================================================================================
 /*SERVICE DEL MODELO*/
 //los servicios en angular implementas las funciones (en muchos casos las CRUD) de los datos recibidos 
@@ -81,6 +49,8 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
         //cargar la configuracion de la coleccion:
 
         //indispensable dejar una referencia de_afs en la clase padre
+        //IMPORTANTE: los servicios (como AngularFirestore) no se pueden 
+        //inyectar directamente en la clase padre por problemas con super()
         super.U_afs = this._afs;
         
         //Objeto con metodos y propiedeades de utilidad para el service
@@ -95,9 +65,6 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
         //desde la clase ctrl_Util
         //
         this._pathColeccion = this.ModeloCtrl_Util.getPathColeccion();
-        //================================================================
-        //Inicializar el ultimoDoc$
-        this.leerUltimoDoc(null, this._pathColeccion);
         //================================================================
     }
     //================================================================================================================================
@@ -182,7 +149,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     //funciones que se ejecutan una vez obtenidos los docs
     //es la razon de que todas lso metodos de lectura tengan la terminacion  $
     //================================================================
-    /*get{Models}$()*/
+    /*get$()*/
     //permite obtener todos los docs de una coleccion, es el metodo base de 
     //lectura con el cual se puede construir las demas consultas
     //Parametros:
@@ -205,7 +172,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     //docInicial:
     //solo es necesario recibirlo si por alguna razon se quiere paginar 
     //No teniendo como base los snapshotsDocs sino otra cosa
-    public getProductos$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+    public get$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
                         RFS:IRunFunSuscribe<Producto>, 
                         valQuery:IProducto<IValQ_Producto> | null, 
                         limite=this.limitePaginaPredefinido, 
@@ -251,7 +218,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
         return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
     }
 
-    /*get{Model}Id$()*/
+    /*geId$()*/
     //permite obtener un doc por medio de un id SIN  path_id, es un metodo auxiliar
     //con el mismo funcionamiento de las demas lecturas (excepto la de
     // getModelo_Path_id$() ).
@@ -273,7 +240,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     //(valores a buscar, rangos, iniciales, entre otros)
     //
     //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc
-    public getProductoId$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+    public getId$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
                           RFS:IRunFunSuscribe<Producto>, 
                           valQuery:IProducto<IValQ_Producto> | null
                           ):IDoc$<Producto, IProducto<IValQ_Producto>>{
@@ -313,7 +280,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     }
 
     //TEST---------------------------------------------------------------------------------------------------------------------------
-    public getProductosPorNombre$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+    public getPorNombre$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
                                   RFS:IRunFunSuscribe<Producto>, 
                                   valQuery:IProducto<IValQ_Producto>, 
                                   limite=this.limitePaginaPredefinido, 
@@ -378,7 +345,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
         return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
     }
 
-    public getProductosPorPrecio$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+    public getPorPrecio$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
                                   RFS:IRunFunSuscribe<Producto>, 
                                   valQuery:IProducto<IValQ_Producto> | null,
                                   limite=this.limitePaginaPredefinido, 
@@ -470,7 +437,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
         return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
     }    
 
-    public getProductosPorMiscRuedas$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+    public getPorMiscRuedas$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
                                      RFS:IRunFunSuscribe<Producto>, 
                                      valQuery:IProducto<IValQ_Producto> | null, 
                                      limite=this.limitePaginaPredefinido, 
@@ -563,7 +530,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
         return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
     }    
 
-    public getProductosPorArrayNormal$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
+    public getPorArrayNormal$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>> | null, 
                                        RFS:IRunFunSuscribe<Producto>, 
                                        valQuery:IProducto<IValQ_Producto> | null,
                                        limite=this.limitePaginaPredefinido,
@@ -616,7 +583,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     }   
     //------------------------------------------------------------------------------------------------------------------------------
     //================================================================================================================================
-    /*get{Modelo}_Path_Id$*/
+    /*get_Path_Id$*/
     //permite consultar un solo doc siempre y cuando se tenga el path_id
     //Parametros:
     //doc$:
@@ -631,16 +598,16 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     //primera vez se recibe un null y eso en casos que no se requiera 
     //inmediatamente obtener dicho doc
     //
-    public getProductos_Path_Id$(docPath_Id$:IDocPath_Id$<Producto>, 
+    public get_pathDoc$(pathDoc$:IpathDoc$<Producto>, 
                                 RFS:IRunFunSuscribe<Producto>, 
-                                path_Id:string | null 
-                                ):IDocPath_Id$<Producto>{
+                                _pathDoc:string | null 
+                                ):IpathDoc$<Producto>{
 
-        return this.leerDocPath_Id$(docPath_Id$, RFS, path_Id);
+        return this.leer_pathDoc$(pathDoc$, RFS, _pathDoc);
     }
 
     //================================================================================================================================
-    /*paginarDocs*/
+    /*paginar$*/
     //este metodo determina y detecta el tipo de paginacion y solicita el
     //lote de documentos de acuerdo a los parametros
     //Parametros:
@@ -652,12 +619,13 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     //se debe recibir alguna de las 2 opciones "previo" | "siguiente"
     //Recordar que no todos los tipos de paginacion aceptan "previo"
     //
-    public paginarProductos$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>>, 
+    public paginar$(doc$:IDoc$<Producto, IProducto<IValQ_Producto>>, 
                             direccionPaginacion: "previo" | "siguiente"
                             ):IDoc$<Producto, IProducto<IValQ_Producto>> {
 
         return this.paginarDocs(doc$, direccionPaginacion);
     }
+
     //================================================================================================================================
 
     //TEST----------------------------------------------
@@ -665,7 +633,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     //--------------------------------------------------    
 
     //================================================================================================================================    
-    /*crear{modelo}*/
+    /*crear*/
     //permite la creacion de un doc en tipo set
     //Parametros:
     //
@@ -676,15 +644,15 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public crearProducto(docNuevo: Producto, v_PreMod?:Iv_PreModificar_Producto): Promise<void> {
+    public crear(docNuevo: Producto, v_PreMod?:Iv_PreModificar_Producto): Promise<void> {
 
         //TEST----------------------------------------------
-        let numId = this.ModeloCtrl_Util.getNumOrderKey(this.ultimoID);
+        const sufijo = Date.now().toString(32) ;
         let loteNuevos = <Producto[]>[
             {
                 _id: "",
-                nombre: `Prueba${numId}`,
-                categoria: `Prueba${numId}`,
+                nombre: `Prueba${sufijo}`,
+                categoria: `Prueba${sufijo}`,
                 precio: 400,
                 map_miscelanea: {
                     tipo: "vehiculo",
@@ -699,8 +667,8 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
             },
             {
                 _id: "",
-                nombre: `Prueba${numId}`,
-                categoria: `Prueba${numId}`,
+                nombre: `Prueba${sufijo}`,
+                categoria: `Prueba${sufijo}`,
                 precio: 400,
                 map_miscelanea: {
                     tipo: "vehiculo",
@@ -715,8 +683,8 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
             },
             {
                 _id: "",
-                nombre: `Prueba${numId}`,
-                categoria: `Prueba${numId}`,
+                nombre: `Prueba${sufijo}`,
+                categoria: `Prueba${sufijo}`,
                 precio: 400,
                 map_miscelanea: {
                     tipo: "vehiculo",
@@ -731,8 +699,8 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
             },
             {
                 _id: "",
-                nombre: `Prueba${numId}`,
-                categoria: `Prueba${numId}`,
+                nombre: `Prueba${sufijo}`,
+                categoria: `Prueba${sufijo}`,
                 precio: 400,
                 map_miscelanea: {
                     tipo: "vehiculo",
@@ -747,8 +715,8 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
             },
             {
                 _id: "",
-                nombre: `Prueba${numId}`,
-                categoria: `Prueba${numId}`,
+                nombre: `Prueba${sufijo}`,
+                categoria: `Prueba${sufijo}`,
                 precio: 400,
                 map_miscelanea: {
                     tipo: "vehiculo",
@@ -763,8 +731,8 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
             },
             {
                 _id: "",
-                nombre: `Prueba${numId}`,
-                categoria: `Prueba${numId}`,
+                nombre: `Prueba${sufijo}`,
+                categoria: `Prueba${sufijo}`,
                 precio: 400,
                 map_miscelanea: {
                     tipo: "vehiculo",
@@ -788,13 +756,13 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
         //--------------------------------------------------
         //================================================================
         //pre modificacion y formateo del doc
-        docNuevo = this.ModeloCtrl_Util.preCrearOActualizar(docNuevo, this.ultimoID, true, false, v_PreMod);
+        docNuevo = this.ModeloCtrl_Util.preCrearOActualizar(docNuevo, true, false, v_PreMod);
         //================================================================
         return this.crearDoc(docNuevo, this.ModeloCtrl_Util.getPathColeccion());
     }
 
     //================================================================
-    /*actualizar{modelo}*/
+    /*actualizar*/
     //permite la modificacion de un doc por medio de su _id
     //
     //Parametros:
@@ -810,7 +778,7 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public actualizarProducto(docEditado: Producto, isEditadoFuerte = false, v_PreMod?:Iv_PreModificar_Producto): Promise<void> {
+    public actualizar(docEditado: Producto, isEditadoFuerte = false, v_PreMod?:Iv_PreModificar_Producto): Promise<void> {
         //TEST--------------------------------------------
         docEditado = <Producto>{
             _id: "1-9c73bc52fc92837d",
@@ -830,257 +798,29 @@ export class ProductoService extends Service_Util< Producto, IProducto<any>,  Pr
         //------------------------------------------------
         //================================================================
         //pre modificacion y formateo del doc
-        docEditado = this.ModeloCtrl_Util.preCrearOActualizar(docEditado, this.ultimoID, false, isEditadoFuerte, v_PreMod);
+        docEditado = this.ModeloCtrl_Util.preCrearOActualizar(docEditado, false, isEditadoFuerte, v_PreMod);
         //================================================================
         return this.actualizarDoc(docEditado, this.ModeloCtrl_Util.getPathColeccion());
 
     }
     //================================================================
-    /*eliminar {modelo}*/
+    /*eliminar */
     //permite la eliminacion de un doc por medio del _id
     //Parametros:
     //
     //_id:
     //estring con id a eliminar
     //
-    public eliminarProducto(_id: string): Promise<void> {
+    public eliminar(_id: string): Promise<void> {
         //Test-------------------------------------------
         _id = "2-a940c69dbf6536cc";
         //------------------------------------------------
         return this.eliminarDoc(_id, this.ModeloCtrl_Util.getPathColeccion());
     }
 
-    //================================================================================================================================
-    //desuscribir observables pricipales
-    public unsubscribeAllProductos$(docs$:IDoc$<Producto, IProducto<IValQ_Producto>>[], docPath_Id$:IDocPath_Id$<Producto>):void {
-        
-        //================================================
-        //agrego el control doc$ que hace referencia 
-        //al monitoreo interoa del ultimoDoc
-        docs$.push(this.ultimoDoc$);
-    
-        //================================================
-        //se desuscriben y eliminan TODOS los controles$ que 
-        //hacen referencia a este controlador    
-        for (let i = 0; i < docs$.length; i++) {
-            docs$[i] = this.unsubscribeDoc$(docs$[i]);          
-            
-        }
-        //tambien el control especial
-        docPath_Id$ = this.unsubscribeDocsPath_Id$(docPath_Id$)   
-        //================================================
-    }
     //================================================================
 
 }
-
-//================================================================
-/*{Modelo}Ctrl_Util*/
-//las clases que heredan  Ctrl_Util y que implementa la interfaz 
-//IModelo proporcionan funciones y utilidades enfocadas al manejo 
-//de los controllers o services de cada modelo, entre sus funcionalidades
-//estan: validaciones,formateo, nom, selecciones entre otros y se enfoca 
-//en atomizar dichas funcionalidades para cada campo o en conjunto para 
-//todo el modelo
-//
-//IMPORTANTE: en esta clase si se deberia agregar metodos y demas funcionalidades
-
-export class ProductoCtrl_Util extends Ctrl_Util<Producto, IProducto<any>, ProductoCtrl_Util> 
-                               implements IProducto<any> {
-
-    //================================================================
-    //atributos con funcionalidades para cada campo:
-    _id:IUtilCampo<string, any> = {
-        nom:"_id",
-    };
-    _pathDoc:IUtilCampo<string, any> = {
-        nom:"_pathDoc",
-    };
-
-    nombre:IUtilCampo<string, any> = {
-        nom : "nombre",
-        isRequerido:true,
-        formateoCampo:(val)=>{
-            if (val && val != null) {
-                const util = new ProductoCtrl_Util();
-                const c_util = util.nombre;
-                val = val.trim();                
-            }
-            return val
-        },
-    };
-    precio:IUtilCampo<number, any> = {
-        nom:"precio",
-        isRequerido:true,
-        maxFactorIgualdadQuery : 1,
-        expFactorRedondeo : null,
-        formateoCampo:(val)=>{
-            if (val && val != null) {
-                const util = new ProductoCtrl_Util();
-                const c_util = util.precio;
-                //demostracion de ajuste de redondeo --funcional mas no necesario por ahora--:
-                val = util.ajustarDecimales("round", val, c_util.expFactorRedondeo);                
-            }
-            return val
-        },
-    };
-    categoria:IUtilCampo<string, any> = {
-        nom:"categoria"
-    };
-    map_miscelanea:IUtilCampo<IMap_miscelanea<any>, Map_miscelanea_Util> = {
-        nom:"map_miscelanea",
-        isMap:true,
-        util: new Map_miscelanea_Util()
-
-    }; 
-    mapA_misc:IUtilCampo<IMapA_misc<any>, MapA_misc_Util> ={
-        nom : "mapA_misc",
-        isMap : true,
-        isArray : true,
-        util : new MapA_misc_Util()
-    }; 
-
-    emb_SubColeccion:IUtilCampo<any, any> = {
-        nom : "emb_SubColeccion",
-        isEmbebido : true
-    }
-
-    v_precioImpuesto:IUtilCampo<number, any> = {
-        nom:"v_precioImpuesto",
-        isVirtual:true
-    }    
-    //================================================================
-
-    constructor() {
-        super();
-    }
-    //================================================================
-    /*getNomColeccion()*/
-    //obtener el nombre de la coleccion o subcoleccion SIN PATH
-    public getNomColeccion():string{
-        return "Productos";
-    }    
-    //================================================================
-    /*getPathColeccion()*/
-    //obtener el path de la coleccion o subcoleccion,
-    //en las colecciones devuelve el mismo nom ya qeu son Raiz
-    //Parametros:
-    //
-    //pathBase ->  path complemento para construir el el path completo
-    //             util para las subcolecciones
-    public getPathColeccion(pathBase:string=""):string{
-        if (pathBase == "") {
-            return `${this.getNomColeccion()}`;
-        }else{
-            return `${pathBase}/${this.getNomColeccion()}`;
-        }
-    }    
-    //================================================================
-    /*preCrearOActualizar()*/
-    //metodo que debe ejecutarse antes de crear o actualizar un documento
-    //Parametros:
-    //doc -> el documento que se desea crear o actualizar
-    //v_utilesPreMod ->  objeto que contiene datos para enriqueser o realizar operaciones
-    //                   de acuerdo a la coleccion (determinar si se crea o se actualiza, generar _ids y )
-
-    public preCrearOActualizar(doc:Producto,
-                                ultimo_id:string,
-                                isCrear:boolean=true,
-                                isEditadoFuerte=false, 
-                                v_PreMod?:Iv_PreModificar_Producto
-                              ):Producto{
-        
-        //================================================================
-        //se determina si se desea crear el documento para su configuracion
-        if (isCrear) {
-            //================================================================
-            //aqui se genera el nuevo _id a guardar
-            doc._id = (ultimo_id && typeof ultimo_id === 'string') ?
-                      this.generarIds(this.getNumOrderKey(ultimo_id)) : 
-                      this.generarIds(0);               
-           //================================================================
-            //aqui se genera el   _pathDoc   del doc a crear, en el caso
-            // de las colecciones SIEMPRE será el pathColeccion estandar
-            //IMPORTANTE: SOLO PARA COLECCIONES
-            doc._pathDoc = `${this.getPathColeccion()}/${doc._id}`;
-            //================================================================
-        }
-        //----------------[EN CONSTRUCCION]----------------
-        if (v_PreMod) {
-            
-        }
-        //------------------------------------------------
-        //================================================================
-        //aqui se formatean los datos del documento (se quitan campos 
-        //inecesarios (no almacenables))
-        doc = this.formatearDoc(doc, this, isEditadoFuerte);
-        //================================================================                               
-        return doc;       
-    }
-
-    //================================================================
-    /*preLeerDocs()*/
-    //metodo que debe ejecutarse antes de entregar la lectura de documentos
-    //al correspondiente componente, esta metodo se ejecuta en CADA 
-    //DOCUMENTO LEIDO (documento por documento)
-    //Parametros:
-    //docs ->  documento o documentos que se leyeron de firebase
-    //v_utilesPreLeer-> objeto que contiene datos para enriqueser o realizar operaciones
-    //          (por ejemplo cargar los campos virtuales) antes de entregar a
-    //          la vista o componente correspondiente
-    public preLeerDocs(docs:Producto[] | Producto, v_utilesPreLeer:Iv_PreLeer_Producto):Producto[] | Producto{
-
-        if(docs){
-            if(Array.isArray(docs)){
-                docs = docs.map((doc)=>{
-                    //================================================================
-                    //aqui todo lo referente a la modificacion de cada documento antes 
-                    //de devolverlo
-                    doc.v_precioImpuesto = ((doc.precio * v_utilesPreLeer.imp)/100) + doc.precio;
-                    //================================================================
-                    return doc;
-                });
-            }else{
-                //================================================================
-                //aqui todo lo referente a la modificacion de cada documento antes 
-                //de devolverlo
-                docs.v_precioImpuesto = ((docs.precio * v_utilesPreLeer.imp)/100) + docs.precio;
-                //================================================================
-            }
-        }
-        //retornar doc ya formateado
-        return docs;
-    }
-}
-//================================================================================================================================
-/*Clases Ctrl_Util para campo especiales (map_ y mapA_)*/
-//estas clases por ahora no necesitan extender a la clase _Util
-//ya que no requieren metodos especiales, si se llegara a requerir
-//(por ejemplo en las propiedades de validate o formato que son funciones
-//se deberá usar declarar la clase util de la coleccion padre dentro de la 
-//funcion y usar los metodos que se requieran)
-export class  Map_miscelanea_Util implements IMap_miscelanea<any>{
-    ruedas:IUtilCampo<number, any> = {
-        nom:"ruedas",
-        nomMapPath: "map_miscelanea.ruedas",
-        maxFactorIgualdadQuery : 1,
-        expFactorRedondeo : null
-    };
-
-    tipo:IUtilCampo<string, any> = {
-        nom:"tipo",
-        nomMapPath: "map_miscelanea.tipo"
-    };
-}
-
-export class  MapA_misc_Util implements IMapA_misc<any>{
-    color:IUtilCampo<string, any> = {
-        nom:"color",
-        nomMapPath: "map_miscelanea.color", //por ahora, no sirve en array
-        maxFactorIgualdadQuery : 1
-    };
-}
-
 //================================================================================================================================
 
 

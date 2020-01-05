@@ -8,18 +8,20 @@
 // que requiera angular
 // para este caso la conexion a firebase
 //================================================================
+import { firebase_secretCredentials } from "./secret_credentials";
 
 export const environment = {
   production: false,
-  firebase : {
-    apiKey: "AIzaSyB5htWVKU09imVbTR9bz23iAQsFFhXDQ7g",
-    authDomain: "prueba1-87d2f.firebaseapp.com",
-    databaseURL: "https://prueba1-87d2f.firebaseio.com",
-    projectId: "prueba1-87d2f",
-    storageBucket: "prueba1-87d2f.appspot.com",
-    messagingSenderId: "567889637995",
-    appId: "1:567889637995:web:a2bcd830f0cc5ad5"
-  }
+  firebase : firebase_secretCredentials.dev
+  // {
+  //   apiKey: "XXXXXXXXXXXXXXXXXXXXXX",
+  //   authDomain: "XXXXXXXXXXX.firebaseapp.com",
+  //   databaseURL: "https://XXXXXXXXXXXXXXX.firebaseio.com",
+  //   projectId: "XXXXXXXXXXXXXXXXX",
+  //   storageBucket: "XXXXXXXXXXXXX.appspot.com",
+  //   messagingSenderId: "XXXXXXXXXXXXXXX",
+  //   appId: "1:XXXXXXXXXXXXXXX:web:XXXXXXXXXXXXXXXXX"
+  // }
 };
 
 /*

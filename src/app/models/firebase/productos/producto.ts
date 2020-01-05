@@ -48,15 +48,32 @@
 //       (si es sencillo simula relacion 1a1 y si es array simula relacion 1aMuchos)
 
 
-export interface Iemb_SubColeccion<TExtend>{
+export interface IProducto<TExtend>{
     _id? : TExtend;  //_id personalizado creado por el modulo uuid
     _pathDoc? : TExtend; 
 
-    subCampo1?:TExtend;
-    subCampo2?:TExtend;
+    nombre? : TExtend
+    precio? : TExtend;
+    categoria? : TExtend;
+
+    map_miscelanea? : IMap_miscelanea<TExtend> | any; 
+    mapA_misc?: IMapA_misc<TExtend> | any;
+
+    emb_SubColeccion?:TExtend;
+
+    v_precioImpuesto?:TExtend;
 
 }
-//================================================================================================================================
+
+export interface IMap_miscelanea<TExtend>{
+    tipo? : TExtend;
+    ruedas? : TExtend;
+}
+
+export interface IMapA_misc<TExtend>{
+    color?:TExtend;
+}
+
 //================================================================================================================================
 /*Modelo  clase*/
 //la fuertemente tipada es en la que se declaran las clases (preferible no tener constructor y 
@@ -103,12 +120,29 @@ export interface Iemb_SubColeccion<TExtend>{
 //(no permite paginar en estandar o full, solo se podria como paginacion acumulativa pero
 // el costo se eleva considerablemente)
 //en caso de necesitar campos boolean es mejor usar number con 0 como false y 1 como true
-export class emb_SubColeccion implements Iemb_SubColeccion<any> {
+
+export class Producto implements IProducto<any> {
     _id : string =""; //se asignará dinamicamente
     _pathDoc:string =""; //se asignará dinamicamente
 
-    subCampo1:string = "";
-    subCampo2:string = "";
+    nombre : string ="";
+    precio : number = 0;
+    categoria : string = "";
+    map_miscelanea : Map_miscelanea = new Map_miscelanea(); 
+    mapA_misc: MapA_misc[] =[];
+
+    emb_SubColeccion?:any;
+
+    v_precioImpuesto?: number = 0;
+}
+
+export class Map_miscelanea implements IMap_miscelanea<any>{
+    tipo : string = "";
+    ruedas : number = 0;
+}
+
+export class MapA_misc implements IMapA_misc<any>{
+    color:string = "";
 }
 
 //================================================================================================================================

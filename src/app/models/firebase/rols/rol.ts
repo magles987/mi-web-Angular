@@ -48,15 +48,23 @@
 //       (si es sencillo simula relacion 1a1 y si es array simula relacion 1aMuchos)
 
 
-export interface Iemb_SubColeccion<TExtend>{
+export interface IRol<TExtend>{
     _id? : TExtend;  //_id personalizado creado por el modulo uuid
     _pathDoc? : TExtend; 
 
-    subCampo1?:TExtend;
-    subCampo2?:TExtend;
-
+    codigo? : TExtend
+    mapA_permisos? : TExtend | ImapA_permisos<TExtend>[];
 }
-//================================================================================================================================
+
+export interface ImapA_permisos<TExtend>{
+    nomColeccion:TExtend;
+    read:TExtend;
+    write:TExtend;
+    create:TExtend;
+    update:TExtend;
+    delete:TExtend;
+}
+
 //================================================================================================================================
 /*Modelo  clase*/
 //la fuertemente tipada es en la que se declaran las clases (preferible no tener constructor y 
@@ -103,13 +111,29 @@ export interface Iemb_SubColeccion<TExtend>{
 //(no permite paginar en estandar o full, solo se podria como paginacion acumulativa pero
 // el costo se eleva considerablemente)
 //en caso de necesitar campos boolean es mejor usar number con 0 como false y 1 como true
-export class emb_SubColeccion implements Iemb_SubColeccion<any> {
-    _id : string =""; //se asignará dinamicamente
+//a no ser que sobre dichos campos NO SE REALICEN CONSULTAS
+
+export class Rol implements IRol<any> {
+    _id:string =""; //se asignará dinamicamente
     _pathDoc:string =""; //se asignará dinamicamente
 
-    subCampo1:string = "";
-    subCampo2:string = "";
+    //Roles Pre configurados:
+    //invitado
+    //empleado
+    //administrador
+    //programador
+    codigo:string ="invitado";
+    mapA_permisos:mapA_permisos[] = [];
+
 }
 
+export class mapA_permisos implements ImapA_permisos<any>{
+    nomColeccion:string ="";
+    read:number =0;
+    write:number =0;
+    create:number =0;
+    update:number =0;
+    delete:number =0;
+}
 //================================================================================================================================
 

@@ -48,15 +48,16 @@
 //       (si es sencillo simula relacion 1a1 y si es array simula relacion 1aMuchos)
 
 
-export interface Iemb_SubColeccion<TExtend>{
+export interface IUsuario<TExtend>{
     _id? : TExtend;  //_id personalizado creado por el modulo uuid
     _pathDoc? : TExtend; 
 
-    subCampo1?:TExtend;
-    subCampo2?:TExtend;
-
+    nombre? : TExtend
+    apellido? : TExtend;
+    edad? : TExtend;
+    fk_rol?: TExtend;
 }
-//================================================================================================================================
+
 //================================================================================================================================
 /*Modelo  clase*/
 //la fuertemente tipada es en la que se declaran las clases (preferible no tener constructor y 
@@ -103,12 +104,17 @@ export interface Iemb_SubColeccion<TExtend>{
 //(no permite paginar en estandar o full, solo se podria como paginacion acumulativa pero
 // el costo se eleva considerablemente)
 //en caso de necesitar campos boolean es mejor usar number con 0 como false y 1 como true
-export class emb_SubColeccion implements Iemb_SubColeccion<any> {
+
+export class Usuario implements IUsuario<any> {
     _id : string =""; //se asignará dinamicamente
     _pathDoc:string =""; //se asignará dinamicamente
 
-    subCampo1:string = "";
-    subCampo2:string = "";
+    nombre : string ="";
+    apellido : string = "";
+    edad : string = "";
+
+    fk_rol:string = "";
+
 }
 
 //================================================================================================================================
