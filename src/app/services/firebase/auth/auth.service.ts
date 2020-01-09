@@ -6,14 +6,23 @@ import { auth } from 'firebase/app';
 import { Observable, Subscription } from 'rxjs';
 import { map, switchMap, } from 'rxjs/operators';
 
-import { AuthNoSocialCtrl_Util, ETipoAuth } from './authNoSocialCtrl_Util';
+import { AuthNoSocial_Meta } from './authNoSocial_Meta';
 import { AuthNoSocial } from 'src/app/models/firebase/auth/authNoSocial';
 
+//================================================================================================================================
+/*INTERFACES y Enums especiales para cada services*/
+export enum ETipoAuth {
+    anonimo = "anonimo",
+    email = "email",
+    phone = "phone",
+    google = "google",
+} 
+//================================================================================================================================
 
 @Injectable()
 export class AuthService {
 
-    public Model_Util:AuthNoSocialCtrl_Util;
+    public Model_Meta:AuthNoSocial_Meta;
     
     private authInfoUser:firebase.User | null;
     public authUserId:string | null;
@@ -24,7 +33,7 @@ export class AuthService {
     constructor(private afAuth: AngularFireAuth
                 ) {
 
-        this.Model_Util = new AuthNoSocialCtrl_Util();
+        this.Model_Meta = new AuthNoSocial_Meta();
 
         this.authInfoUser = null;
         this.authUserId = null;

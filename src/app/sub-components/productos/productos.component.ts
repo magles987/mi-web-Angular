@@ -1,24 +1,19 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { FormControl, FormGroup } from "@angular/forms";
 
-import { AuthService } from 'src/app/services/firebase/auth/auth.service';
+import { IDoc$, IpathDoc$, IRunFunSuscribe } from 'src/app/services/firebase/service_Util';
 
-import { IDoc$, IpathDoc$, IRunFunSuscribe } from 'src/app/services/firebase/_Util';
+import { AuthService, ETipoAuth } from 'src/app/services/firebase/auth/auth.service';
+import { AuthNoSocial,  } from 'src/app/models/firebase/auth/authNoSocial';
 
-import { IProducto, Producto } from '../../models/firebase/productos/producto';
-import { IValQ_Producto, Iv_PreLeer_Producto } from '../../services/firebase/productos/productoCtrl_Util';
-import { ProductoService } from '../../services/firebase/productos/producto.service';
+import { IProducto, Producto } from '../../models/firebase/producto/producto';
+import { ProductoService, IQValue_Producto, Iv_PreGet_Producto } from '../../services/firebase/producto/producto.service';
 
-import { emb_SubColeccion, Iemb_SubColeccion } from 'src/app/models/firebase/productos/emb_subColeccion';
+import { emb_SubColeccion, Iemb_SubColeccion } from 'src/app/models/firebase/producto/emb_subColeccion';
+import { emb_subColeccionService, IQValue_emb_SubColeccion } from 'src/app/services/firebase/producto/emb_subcoleccion.service';
 
-import { Rol } from 'src/app/models/firebase/rols/rol';
-import { RolService } from 'src/app/services/firebase/rols/rol.service';
-
-import { IValQ_emb_SubColeccion, Iv_PreLeer_emb_SubColeccion } from '../../services/firebase/productos/emb_subcoleccionCtrl_Util';
-import { emb_subColeccionService } from 'src/app/services/firebase/productos/emb_subcoleccion.service';
-import { ETipoAuth } from 'src/app/services/firebase/auth/authNoSocialCtrl_Util';
-import { AuthNoSocial } from 'src/app/models/firebase/auth/authNoSocial';
-
+import { Rol } from 'src/app/models/firebase/rol/rol';
+import { RolService } from 'src/app/services/firebase/rol/rol.service';
 
 
 @Component({
@@ -32,14 +27,14 @@ export class ProductosComponent implements OnInit, OnDestroy {
   //contenedor de documento para trabajo en plantilla
   public Producto:Producto; 
 
-  public ProductoCtrl$:IDoc$<Producto, IProducto<IValQ_Producto>>;
+  public ProductoCtrl$:IDoc$<Producto, IProducto<IQValue_Producto>>;
   //public Producto_pathDocCtrl$:IpathDoc$<Producto>;
 
-  public Emb_SubColeccionCtrl$:IDoc$<emb_SubColeccion, Iemb_SubColeccion<IValQ_emb_SubColeccion>>;
+  public Emb_SubColeccionCtrl$:IDoc$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>;
 
   //array de documentos obtenidos de la bd
   //de acuerdo a los filtros aplicados
-  public productosList:Producto[];
+  public listProductos:Producto[];
 
   public Productos_Path_Id:Producto | null;
 
@@ -60,7 +55,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
     //preparar la inicializacion de objetos principales
     this.Producto = new Producto();
 
-    this.productosList = []; 
+    this.listProductos = []; 
     //================================================
     //inicializacion de controls
     this.ProductoCtrl$ = null;
@@ -70,7 +65,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
     //================================================
     //inicializacion de primeras consultas (opcional):
 
-    this.ProductoCtrl$ = this._ProductoService.get$(this.ProductoCtrl$, this.RFS_Productos, null);
+    this.ProductoCtrl$ = this._ProductoService.get$(this.ProductoCtrl$, this.RFS_Productos, null, this.getDatosPreGet());
 
     //this.Producto_pathDocCtrl$ = this._ProductoService.getProducto_pathDoc$(this.Producto_pathDocCtrl$, this.RFS_Productos_pathDoc, null);
 
@@ -121,8 +116,8 @@ export class ProductosComponent implements OnInit, OnDestroy {
   //================================================================================================================================
   //declarar filtros (se debe usar metodo getters para poder crear
   //objetos de filtrado independientes, tomando una base como referencia)
-  private getFiltroProductosTodo():IProducto<IValQ_Producto>{
-    let valQuery:IProducto<IValQ_Producto> = {
+  private getFiltroProductosTodo():IProducto<IQValue_Producto>{
+    let valQuery:IProducto<IQValue_Producto> = {
       _id:{
         _orden:"asc"
       }
@@ -130,8 +125,8 @@ export class ProductosComponent implements OnInit, OnDestroy {
     return valQuery;
   } 
 
-  private getFiltroProductosPorNombre():IProducto<IValQ_Producto>{
-    let valQuery:IProducto<IValQ_Producto> = {
+  private getFiltroProductosPorNombre():IProducto<IQValue_Producto>{
+    let valQuery:IProducto<IQValue_Producto> = {
       nombre:{
         ini:"ha",
         _orden:"asc"
@@ -140,8 +135,8 @@ export class ProductosComponent implements OnInit, OnDestroy {
     return valQuery;
   } 
 
-  private getFiltroProductosPorPrecio():IProducto<IValQ_Producto>{
-    let valQuery:IProducto<IValQ_Producto> = {
+  private getFiltroProductosPorPrecio():IProducto<IQValue_Producto>{
+    let valQuery:IProducto<IQValue_Producto> = {
       precio:{
         //val:100 //esto si quiero igualdad
         min:300,
@@ -151,8 +146,8 @@ export class ProductosComponent implements OnInit, OnDestroy {
     return valQuery;
   } 
 
-  private getFiltroProductosPorRuedas():IProducto<IValQ_Producto>{
-    let valQuery:IProducto<IValQ_Producto> = {
+  private getFiltroProductosPorRuedas():IProducto<IQValue_Producto>{
+    let valQuery:IProducto<IQValue_Producto> = {
       map_miscelanea:{
         ruedas:{
           val:2,
@@ -163,13 +158,13 @@ export class ProductosComponent implements OnInit, OnDestroy {
     return valQuery;
   } 
 
-  private getFiltroProductosArrayNormal():IProducto<IValQ_Producto>{
-    let valQuery:IProducto<IValQ_Producto> = null;
+  private getFiltroProductosArrayNormal():IProducto<IQValue_Producto>{
+    let valQuery:IProducto<IQValue_Producto> = null;
     return valQuery;
   } 
 
-  private getFiltroProductosId():IProducto<IValQ_Producto>{
-    let valQuery:IProducto<IValQ_Producto> = {
+  private getFiltroProductosId():IProducto<IQValue_Producto>{
+    let valQuery:IProducto<IQValue_Producto> = {
       _id:{
         val:"000003-ab3e840a0dff7f5d",
         _orden:"asc"
@@ -187,7 +182,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   private RFS_Productos:IRunFunSuscribe<Producto> = {
     next:(docRes:Producto[])=>{
-      this.productosList = <Producto[]>this._ProductoService.ModeloCtrl_Util.preLeerDocs(docRes, this.getDatosPreLeer());  
+      this.listProductos = docRes;  
     }, 
     error:(err)=>{
       console.log(err);
@@ -196,7 +191,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   private RFS_Productos_pathDoc:IRunFunSuscribe<Producto> = {
     next:(docRes:Producto)=>{
-      this.Productos_Path_Id = <Producto>this._ProductoService.ModeloCtrl_Util.preLeerDocs(docRes, this.getDatosPreLeer());
+      this.Productos_Path_Id = docRes;
     }, 
     error:(err)=>{
       console.log(err);
@@ -223,9 +218,6 @@ export class ProductosComponent implements OnInit, OnDestroy {
     }
   };
 
-  
-
-  
   //================================================================================================================================
   //paginacion reactiva (se autogestiona de acuerdo al tipo de paginacion):
 
@@ -246,31 +238,31 @@ export class ProductosComponent implements OnInit, OnDestroy {
   public consultarProducto(opc: "Todo"|"_id"|"Nombre"|"Precio"|"Ruedas"|"ArrayNormal"|"SubCol"|"SubColGrup"){
     switch (opc) {
       case "Todo":
-        this.ProductoCtrl$ = this._ProductoService.get$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosTodo());
+        this.ProductoCtrl$ = this._ProductoService.get$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosTodo(), this.getDatosPreGet());
         break;
       case "_id":
-        this.ProductoCtrl$ = this._ProductoService.getId$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosId());
+        this.ProductoCtrl$ = this._ProductoService.getId$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosId(), this.getDatosPreGet());
         break;        
       case "Nombre":
-        this.ProductoCtrl$ = this._ProductoService.getPorNombre$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorNombre());
+        this.ProductoCtrl$ = this._ProductoService.getPorNombre$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorNombre(), this.getDatosPreGet());
         break;  
       case "Precio":
-        this.ProductoCtrl$ = this._ProductoService.getPorPrecio$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorPrecio());
+        this.ProductoCtrl$ = this._ProductoService.getPorPrecio$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorPrecio(), this.getDatosPreGet());
         break;
       case "Ruedas":
-        this.ProductoCtrl$ = this._ProductoService.getPorMiscRuedas$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorRuedas());
+        this.ProductoCtrl$ = this._ProductoService.getPorMiscRuedas$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorRuedas(), this.getDatosPreGet());
         break;  
 
       case "ArrayNormal":
-        this.ProductoCtrl$ = this._ProductoService.getPorArrayNormal$(this.ProductoCtrl$, this.RFS_Productos, null);    
+        this.ProductoCtrl$ = this._ProductoService.getPorArrayNormal$(this.ProductoCtrl$, this.RFS_Productos, null, this.getDatosPreGet());    
         break;
       case "SubCol":
-        let path_embBaseNormal = this.productosList[0]._pathDoc; //opcion basica
-        this.Emb_SubColeccionCtrl$ = this._emb_SubColeccionService.get$(this.Emb_SubColeccionCtrl$, this.RFS_Emb_SubColeccion, null, path_embBaseNormal );    
+        let path_embBaseNormal = this.listProductos[0]._pathDoc; //opcion basica
+        this.Emb_SubColeccionCtrl$ = this._emb_SubColeccionService.get$(this.Emb_SubColeccionCtrl$, this.RFS_Emb_SubColeccion, null, this.getDatosPreGet(), path_embBaseNormal );    
         break;           
       case "SubColGrup":
         let path_embBaseGrup = null;
-        this.Emb_SubColeccionCtrl$ = this._emb_SubColeccionService.get$(this.Emb_SubColeccionCtrl$, this.RFS_Emb_SubColeccion, null, path_embBaseGrup );    
+        this.Emb_SubColeccionCtrl$ = this._emb_SubColeccionService.get$(this.Emb_SubColeccionCtrl$, this.RFS_Emb_SubColeccion, null, this.getDatosPreGet(), path_embBaseGrup );    
         break;        
     
       default:
@@ -281,7 +273,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
   //================================================================================================================================
 
   //a modo de prueba
-  private getDatosPreLeer():Iv_PreLeer_Producto{
+  private getDatosPreGet():Iv_PreGet_Producto{
     return {
       imp : 20
     };

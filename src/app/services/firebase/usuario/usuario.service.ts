@@ -7,9 +7,43 @@ import { AngularFirestore, AngularFirestoreCollection, AngularFirestoreDocument 
 import { Observable, observable, Subject, BehaviorSubject, } from 'rxjs';
 import { map, switchMap, } from 'rxjs/operators';
 
-import { IUsuario, Usuario } from '../../../models/firebase/usuarios/usuario';
-import { UsuarioCtrl_Util, Iv_PreLeer_Usuario, Iv_PreModificar_Usuario, IValQ_Usuario } from './usuarioCtrl_Util';
-import { Service_Util, EtipoPaginar, IQFiltro,IDoc$, IpathDoc$, IRunFunSuscribe } from '../_Util';
+import { IUsuario, Usuario } from '../../../models/firebase/usuario/usuario';
+import { UsuarioCtrl_Util } from './usuario_Meta';
+import { Service_Util, EtipoPaginar, IQFiltro,IDoc$, IpathDoc$, IRunFunSuscribe, IQValue } from '../service_Util';
+
+//================================================================================================================================
+/*INTERFACES y ENUMs especiales para cada modelo de service*/
+//Interfaces especiales para implementar contenedores de 
+//objetos utilitarios para los metodos Pre  
+//deben llevar el sufijo   _Modelo   del moedelo para no generar 
+//conflictos con otras colecciones cuando se haga   import
+//Ejemplo: Iv_PreLeer{aqui el sufijo de coleccion o subcoleccion}
+
+/*Iv_PreGet_{Modelo}*/
+//OPCIONAL el agregar propiedades
+//contiene propiedades externar al modelo (mas especificamente IModelo)
+//para realizar calculos o enriquecer los docs leidos
+//se recomienda crear objetos de esta interfaz en la 
+//propiedad-funcion next de los objetos RFS
+export interface Iv_PreGet_Usuario{
+
+}
+
+/*Iv_PreMod_{Modelo}*/
+//OPCIONAL el agregar propiedades
+//contiene propiedades externar al modelo (mas especificamente IModelo) 
+//para realizar calculos o enriquecer el doc a modificar (ya sea crear o editar) 
+export interface Iv_PreMod_Usuario{
+
+}
+
+/*IQValue_{Modelo}*/
+//OPCIONAL el agregar propiedades
+//contiene propiedades personalizadas para este modelo_util para 
+//construir querys personalizadas y especificas
+export interface IQValue_Usuario extends IQValue{
+
+}
 
 //================================================================================================================================
 /*SERVICE DEL MODELO*/
@@ -29,17 +63,10 @@ import { Service_Util, EtipoPaginar, IQFiltro,IDoc$, IpathDoc$, IRunFunSuscribe 
 //SubColecciones: class Emb_ModeloService
 //
 
-export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  UsuarioCtrl_Util, IUsuario<IValQ_Usuario>> {
+export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  UsuarioCtrl_Util, IUsuario<IQValue_Usuario>> {
 
     //================================================================
     //Propiedaes utilitarias
-    
-    //almacena el path correspondiente a este coleccion o subcoleccion
-    private _pathColeccion: string;
-
-    //almacena un limite de docs leidos estandar para TODAS LAS QUERYS,
-    //sin embargo se puede cambiar este numero en la propiedad QFiltro.limite
-    private limitePaginaPredefinido: number;
 
     //================================================================
     constructor(private _afs: AngularFirestore) {
@@ -53,17 +80,12 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
         super.U_afs = this._afs;
         
         //Objeto con metodos y propiedeades de utilidad para el service
-        this.ModeloCtrl_Util = new UsuarioCtrl_Util();
+        this.Modelo_Meta = new UsuarioCtrl_Util();
 
-        //establece un limite predefinido (es personalizable)
-        this.limitePaginaPredefinido = 4;//10;
-
-        //================================================================
-        //Configuracion de pathColeccion
-        //para las colecciones SIEMPRE se usa el path coleccion generado 
-        //desde la clase ctrl_Util
-        //
-        this._pathColeccion = this.ModeloCtrl_Util.getPathColeccion();
+        //establece un limite predefinido para este 
+        //service (es personalizable incluso se puede 
+        //omitir y dejar el de la clase padre)
+        //this.limitePaginaPredefinido = 10;
         //================================================================
     }
     //================================================================================================================================
@@ -159,10 +181,14 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
     //RFS:
     //objeto con las funciones next() y error() para ejecutar una vez este suscrito
     //
-    //valQuery:
-    //recibe un objeto creado a partir de la interfaz IModelo<IvalQ_Modelo>
+    //QValue:
+    //recibe un objeto creado a partir de la interfaz IModelo<IQValue_Modelo>
     //que a su vez contiene los valores necesarios para construir la query
-    //(valores a buscar, rangos, iniciales, entre otros)
+    //(valores como:  buscar, rangos, iniciales, entre otros)
+    //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
     //
     //limite:
     //indica el numero maximo de docs que puede leer en la query, si no se
@@ -171,29 +197,31 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
     //docInicial:
     //solo es necesario recibirlo si por alguna razon se quiere paginar 
     //No teniendo como base los snapshotsDocs sino otra cosa
-    public get$(doc$:IDoc$<Usuario, IUsuario<IValQ_Usuario>> | null, 
-                        RFS:IRunFunSuscribe<Usuario>, 
-                        valQuery:IUsuario<IValQ_Usuario> | null, 
-                        limite=this.limitePaginaPredefinido, 
-                        docInicial:any=null, 
-                        ):IDoc$<Usuario, IUsuario<IValQ_Usuario>>{
+    public get$(
+        doc$:IDoc$<Usuario, IUsuario<IQValue_Usuario>> | null, 
+        RFS:IRunFunSuscribe<Usuario>, 
+        QValue:IUsuario<IQValue_Usuario> | null, 
+        v_PreGet:Iv_PreGet_Usuario | null,
+        limite=this.limitePaginaPredefinido, 
+        docInicial:any=null, 
+    ):IDoc$<Usuario, IUsuario<IQValue_Usuario>>{
         
         //================================================
         //configurar el pathColeccion solo para coleccion:
-        const pathColeccion = this._pathColeccion; 
+        const pathColeccion = this.getPathColeccion(); 
         const isColeccionGrup = false;       
         //================================================================
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
         const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
-                      QFiltro: IQFiltro<IUsuario<IValQ_Usuario>>) => {
+                      QFiltro: IQFiltro<IUsuario<IQValue_Usuario>>) => {
 
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             
             //================================================================
             //ordenar, limitar y prepaginar con docInicial
-            cursorQueryRef = cursorQueryRef.orderBy(this.ModeloCtrl_Util._id.nom, QFiltro.valQuery._id._orden || "asc") 
+            cursorQueryRef = cursorQueryRef.orderBy(this.Modelo_Meta._id.nom, QFiltro.QValue._id._orden || "asc") 
             cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);
             if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
                 cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);                    
@@ -206,15 +234,16 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
         //Configurar el filtro con las propiedades adicionales como:
         //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
         //el orden y demas propiedades
-        const QFiltro:IQFiltro<IUsuario<IValQ_Usuario>> = {
+        const QFiltro:IQFiltro<IUsuario<IQValue_Usuario>> = {
             query : query,
             docInicial : docInicial,
             limite: limite,
             tipoPaginar : EtipoPaginar.Full,
-            valQuery : (valQuery && valQuery != null)? valQuery : <IUsuario<IValQ_Usuario>>{_id:{_orden:"asc"}}
+            QValue : (QValue && QValue != null)? QValue : <IUsuario<IQValue_Usuario>>{_id:{_orden:"asc"}},
+            v_PreGet: v_PreGet
         }
         //================================================================
-        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
+        return this.leerDocs$(doc$, QFiltro, RFS, this.preGetDocs, pathColeccion, isColeccionGrup);
     }
 
     /*getId$()*/
@@ -233,32 +262,38 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
     //RFS:
     //objeto con las funciones next() y error() para ejecutar una vez este suscrito
     //
-    //valQuery:
-    //recibe un objeto creado a partir de la interfaz IModelo<IvalQ_Modelo>
+    //QValue:
+    //recibe un objeto creado a partir de la interfaz IModelo<IQValue_Modelo>
     //que a su vez contiene los valores necesarios para construir la query
-    //(valores a buscar, rangos, iniciales, entre otros)
+    //(valores como:  buscar, rangos, iniciales, entre otros)
+    //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
     //
     //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc
-    public getId$(doc$:IDoc$<Usuario, IUsuario<IValQ_Usuario>> | null, 
-                          RFS:IRunFunSuscribe<Usuario>, 
-                          valQuery:IUsuario<IValQ_Usuario> | null
-                          ):IDoc$<Usuario, IUsuario<IValQ_Usuario>>{
+    public getId$(
+        doc$: IDoc$<Usuario, IUsuario<IQValue_Usuario>> | null,
+        RFS: IRunFunSuscribe<Usuario>,
+        QValue: IUsuario<IQValue_Usuario> | null,
+        v_PreGet:Iv_PreGet_Usuario | null
+    ): IDoc$<Usuario, IUsuario<IQValue_Usuario>> {
 
         //================================================
         //configurar el pathColeccion solo para coleccion:
-        const pathColeccion = this._pathColeccion; 
+        const pathColeccion = this.getPathColeccion(); 
         const isColeccionGrup = false;    
         //================================================================
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
         const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
-                     QFiltro: IQFiltro<IUsuario<IValQ_Usuario>>) => {
+                     QFiltro: IQFiltro<IUsuario<IQValue_Usuario>>) => {
 
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             //================================================================
             //Query Condiciones:
-            cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util._id.nom, "==", QFiltro.valQuery._id.val);            
+            cursorQueryRef = cursorQueryRef.where(this.Modelo_Meta._id.nom, "==", QFiltro.QValue._id.val);            
             //================================================================
             //no se requiere paginar            
             return cursorQueryRef;
@@ -267,35 +302,38 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
         //Configurar el filtro con las propiedades adicionales como:
         //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
         //el orden y demas propiedades
-        const QFiltro:IQFiltro<IUsuario<IValQ_Usuario>> = {
+        const QFiltro:IQFiltro<IUsuario<IQValue_Usuario>> = {
             query : query,
             docInicial : null,
             limite: 1,
             tipoPaginar : EtipoPaginar.No,
-            valQuery : (valQuery && valQuery != null)? valQuery : <IUsuario<IValQ_Usuario>>{_id:{_orden:"asc"}}
+            QValue : (QValue && QValue != null)? QValue : <IUsuario<IQValue_Usuario>>{_id:{_orden:"asc"}},
+            v_PreGet:v_PreGet
         }        
         //================================================================
-        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
+        return this.leerDocs$(doc$, QFiltro, RFS, this.preGetDocs, pathColeccion, isColeccionGrup);
     }
 
     //TEST---------------------------------------------------------------------------------------------------------------------------
-    public getPorNombre$(doc$:IDoc$<Usuario, IUsuario<IValQ_Usuario>> | null, 
-                                  RFS:IRunFunSuscribe<Usuario>, 
-                                  valQuery:IUsuario<IValQ_Usuario>, 
-                                  limite=this.limitePaginaPredefinido, 
-                                  docInicial:any=null
-                                  ):IDoc$<Usuario, IUsuario<IValQ_Usuario>>{
+    public getPorNombre$(
+        doc$: IDoc$<Usuario, IUsuario<IQValue_Usuario>> | null,
+        RFS: IRunFunSuscribe<Usuario>,
+        QValue: IUsuario<IQValue_Usuario>,
+        v_PreGet:Iv_PreGet_Usuario | null,
+        limite = this.limitePaginaPredefinido,
+        docInicial: any = null
+    ): IDoc$<Usuario, IUsuario<IQValue_Usuario>> {
         
         //================================================
         //configurar el pathColeccion solo para coleccion:
-        const pathColeccion = this._pathColeccion; 
+        const pathColeccion = this.getPathColeccion(); 
         const isColeccionGrup = false;       
         //================================================================
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
         const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
-                      QFiltro: IQFiltro<IUsuario<IValQ_Usuario>>) => {
+                      QFiltro: IQFiltro<IUsuario<IQValue_Usuario>>) => {
 
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
 
@@ -308,19 +346,19 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
             //se usa una consulta con 2 keys limitadoras y se obtiene todos los documentos 
             //que esten dentro de ese rango
             //
-            if (QFiltro.valQuery && QFiltro.valQuery.nombre) {
-                let keyIni = this.ModeloCtrl_Util.nombre.formateoCampo(QFiltro.valQuery.nombre.ini);
+            if (QFiltro.QValue && QFiltro.QValue.nombre) {
+                let keyIni = QFiltro.QValue.nombre.ini.trim();
                 //se calcula la keyFin que sera un caracter superior al keyIni
-                let keyFin = this.ModeloCtrl_Util.getLlaveFinBusquedaStrFirestore(keyIni);
+                let keyFin = this.getLlaveFinBusquedaStrFirestore(keyIni);
     
                 //se establecen los rangos, entre mas texto tengan cada key mas precisa es la busqueda
-                cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util.nombre.nom, ">=", keyIni)
-                                               .where(this.ModeloCtrl_Util.nombre.nom, "<", keyFin);
+                cursorQueryRef = cursorQueryRef.where(this.Modelo_Meta.nombre.nom, ">=", keyIni)
+                                               .where(this.Modelo_Meta.nombre.nom, "<", keyFin);
             }
     
             //================================================================
             //ordenar, limitar y prepaginar con docInicial
-            cursorQueryRef =  cursorQueryRef.orderBy(this.ModeloCtrl_Util.nombre.nom, QFiltro.valQuery.nombre._orden || "asc");
+            cursorQueryRef =  cursorQueryRef.orderBy(this.Modelo_Meta.nombre.nom, QFiltro.QValue.nombre._orden || "asc");
             cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);      
             if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
                 cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);                    
@@ -333,15 +371,16 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
         //Configurar el filtro con las propiedades adicionales como:
         //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
         //el orden y demas propiedades
-        const QFiltro:IQFiltro<IUsuario<IValQ_Usuario>> = {
+        const QFiltro:IQFiltro<IUsuario<IQValue_Usuario>> = {
             query : query,
             docInicial : docInicial,
             limite: limite,
             tipoPaginar : EtipoPaginar.Simple,
-            valQuery : (valQuery && valQuery != null)? valQuery : <IUsuario<IValQ_Usuario>>{nombre:{_orden:"asc"}}
+            QValue : (QValue && QValue != null)? QValue : <IUsuario<IQValue_Usuario>>{nombre:{_orden:"asc"}},
+            v_PreGet:v_PreGet
         }        
         //================================================================
-        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
+        return this.leerDocs$(doc$, QFiltro, RFS, this.preGetDocs, pathColeccion, isColeccionGrup);
     }
 
     //================================================================================================================================
@@ -355,17 +394,23 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
     //RFS:
     //objeto con las funciones next() y error() para ejecutar una vez este suscrito
     //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
+    //
     //path_Id:
     //obligatorio, contiene el la RUTA CON ID del documento a leer, solo por 
     //primera vez se recibe un null y eso en casos que no se requiera 
     //inmediatamente obtener dicho doc
     //
-    public get_pathDoc$(pathDoc$:IpathDoc$<Usuario>, 
-                                RFS:IRunFunSuscribe<Usuario>, 
-                                _pathDoc:string | null 
-                                ):IpathDoc$<Usuario>{
+    public get_pathDoc$(
+        pathDoc$: IpathDoc$<Usuario>,
+        RFS: IRunFunSuscribe<Usuario>,        
+        v_PreGet:Iv_PreGet_Usuario | null,
+        _pathDoc: string | null
+    ): IpathDoc$<Usuario> {
 
-        return this.leer_pathDoc$(pathDoc$, RFS, _pathDoc);
+        return this.leer_pathDoc$(pathDoc$, RFS, v_PreGet, this.preGetDocs, _pathDoc);
     }
 
     //================================================================================================================================
@@ -381,9 +426,10 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
     //se debe recibir alguna de las 2 opciones "previo" | "siguiente"
     //Recordar que no todos los tipos de paginacion aceptan "previo"
     //
-    public paginar$(doc$:IDoc$<Usuario, IUsuario<IValQ_Usuario>>, 
-                            direccionPaginacion: "previo" | "siguiente"
-                            ):IDoc$<Usuario, IUsuario<IValQ_Usuario>> {
+    public paginar$(
+        doc$: IDoc$<Usuario, IUsuario<IQValue_Usuario>>,
+        direccionPaginacion: "previo" | "siguiente"
+    ): IDoc$<Usuario, IUsuario<IQValue_Usuario>> {
 
         return this.paginarDocs(doc$, direccionPaginacion);
     }
@@ -406,7 +452,7 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public crear(docNuevo: Usuario, v_PreMod?:Iv_PreModificar_Usuario): Promise<void> {
+    public crear(docNuevo: Usuario, v_PreMod?:Iv_PreMod_Usuario): Promise<void> {
 
         //TEST----------------------------------------------
         let loteNuevos = <Usuario[]>[
@@ -435,9 +481,9 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
         //--------------------------------------------------
         //================================================================
         //pre modificacion y formateo del doc
-        docNuevo = this.ModeloCtrl_Util.preCrearOActualizar(docNuevo,true, false, v_PreMod);
+        docNuevo = this.preModDoc(docNuevo,true, false, v_PreMod);
         //================================================================
-        return this.crearDoc(docNuevo, this.ModeloCtrl_Util.getPathColeccion());
+        return this.crearDoc(docNuevo, this.getPathColeccion());
     }
 
     //================================================================
@@ -457,7 +503,7 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public actualizar(docEditado: Usuario, isEditadoFuerte = false, v_PreMod?:Iv_PreModificar_Usuario): Promise<void> {
+    public actualizar(docEditado: Usuario, isEditadoFuerte = false, v_PreMod?:Iv_PreMod_Usuario): Promise<void> {
         //TEST--------------------------------------------
         docEditado = <Usuario>{
             _id: "1-9c73bc52fc92837d",
@@ -466,9 +512,9 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
         //------------------------------------------------
         //================================================================
         //pre modificacion y formateo del doc
-        docEditado = this.ModeloCtrl_Util.preCrearOActualizar(docEditado, false, isEditadoFuerte, v_PreMod);
+        docEditado = this.preModDoc(docEditado, false, isEditadoFuerte, v_PreMod);
         //================================================================
-        return this.actualizarDoc(docEditado, this.ModeloCtrl_Util.getPathColeccion());
+        return this.actualizarDoc(docEditado, this.getPathColeccion());
 
     }
     //================================================================
@@ -483,11 +529,100 @@ export class UsuarioService extends Service_Util< Usuario, IUsuario<any>,  Usuar
         //Test-------------------------------------------
         _id = "2-a940c69dbf6536cc";
         //------------------------------------------------
-        return this.eliminarDoc(_id, this.ModeloCtrl_Util.getPathColeccion());
+        return this.eliminarDoc(_id, this.getPathColeccion());
+    }
+
+    //================================================================================================================================
+    /*preModDoc()*/
+    //metodo que debe ejecutarse antes de crear o actualizar un documento
+    //Parametros:
+    //doc
+    //el documento que se desea crear o actualizar
+    //
+    //isCrear:
+    //determina si se desea crear o actualizar
+    //
+    //isEditadoFuerte:
+    //cuando se edita un documento se determina su los campos especiales como
+    // map_  y  mapA_  se deben reemplazar completamente
+    //
+    //v_PreMod: 
+    //objeto que contiene datos para enriqueser o realizar operaciones
+    //de acuerdo a la coleccion (determinar si se crea o se actualiza, 
+    //generar _ids y )
+    //
+    //path_EmbBase:
+    //es exclusivo y OBLIGATORIO para subcolecciones, se recibe el pathBase 
+    //para poder modificar el documento de la subcoleccion
+    //   
+    //_idExterno:
+    //si se requiere asignar un _id especial (No el personalizado) proveido por 
+    //alguna api externa (por ejemplo en el caso de los _id de auth proveeidos 
+    //por la api de registro de google)
+    private preModDoc(
+        doc: Usuario,
+        isCrear: boolean = true,
+        isEditadoFuerte = false,
+        v_PreMod?: Iv_PreMod_Usuario,
+        path_EmbBase?: string,
+        _idExterno?: string
+    ): Usuario {
+
+        //================================================================
+        //se determina si se desea crear el documento para su configuracion
+        if (isCrear) {
+            //================================================================
+            //aqui se genera el nuevo _id a guardar
+            doc._id = this.generarIds();
+            //================================================================
+            //aqui se genera el   _pathDoc   del doc a crear, en el caso
+            // de las colecciones SIEMPRE será el pathColeccion estandar
+            //IMPORTANTE: SOLO PARA COLECCIONES
+            doc._pathDoc = `${this.getPathColeccion(path_EmbBase || "")}/${doc._id}`;
+            //================================================================
+        }
+        //----------------[EN CONSTRUCCION]----------------
+        if (v_PreMod) {
+
+        }
+        //------------------------------------------------
+        //================================================================
+        //aqui se formatean los datos del documento (se quitan campos 
+        //inecesarios (no almacenables))
+        doc = this.formatearDoc(doc, this.Modelo_Meta, isEditadoFuerte);
+        //================================================================                               
+        return doc;
     }
 
     //================================================================
+    /*preGetDocs()*/
+    //Funcion que debe ejecutarse antes de entregar CADA DOCUMENTO LEIDO 
+    //(documento por documento) en el pipe del observable de lectura
+    //
+    //IMPORTANTE: este metodo se usa tambien como variable-funcion
+    //para ser pasado a la clase padre como parametro
+    //
+    //Parametros:
+    //docs ->  documento o documentos que se leyeron de firebase
+    //v_PreLeer-> objeto que contiene datos para enriqueser o realizar operaciones
+    //          (por ejemplo cargar los campos virtuales) antes de entregar a
+    //          la vista o componente correspondiente
 
+    private preGetDocs(
+        doc:Usuario, 
+        v_PreGet?: Iv_PreGet_Usuario
+    ):Usuario {
+
+        if(v_PreGet && v_PreGet != null){
+            //================================================================
+            //aqui todo lo referente a la modificacion de cada documento antes 
+            //de devolverlo
+            
+            //================================================================
+        }
+        //retornar doc ya customizado y enriquecido
+        return doc;
+    }
 }
 //================================================================================================================================
 

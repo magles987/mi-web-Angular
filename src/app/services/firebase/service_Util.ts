@@ -5,11 +5,12 @@ import { map, switchMap, mergeAll, concatAll, concatMap, mergeMap, mapTo, toArra
 
 //permite crear los _ids personalizados
 import { v4 } from "uuid";
+import { IMetaCampo, IMetaColeccion } from './meta_Util';
 
 //================================================================================================================================
 /*ENUMERACIONES E ITERFACES*/
 //================================================================================================================================
-/*IValQ*/
+/*IQValue*/
 //interfaz que permite establecer propiedades que almacenan valores para la Query
 //como valores absolutos, rangos, comparaciones y demas.
 //(para los campos del modelo sobre los cuales se ejecuten algun tipo de consulta)
@@ -20,7 +21,7 @@ import { v4 } from "uuid";
 // ini-> contiene el valor inicial para la busqueda (ideal para la inicial de los campos string)
 // min-> valor minimo (ideal para number)
 // max-> valor maximo (ideal para number)
-export interface IValQ{
+export interface IQValue{
     val?: any;
     ini?: string;
     min?: number;
@@ -73,12 +74,12 @@ export enum EtipoPaginar {
 //Recordar: <IvalQ_Modelo>tipado especial enfocado a los valores
 //necesarios para construir la query
 
-export interface IQFiltro<TIModelo_IvalQ> {
+export interface IQFiltro<TIModelo_IQValue> {
 
     //OBLIGATORIA, contiene la funcion query que se ejecutara para
     //solicitar los docs a firestore de acuerdo a la construccion
     //interna de dicha funcion
-    query:(ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtro:IQFiltro<TIModelo_IvalQ>)=>firebase.firestore.CollectionReference | firebase.firestore.Query;
+    query:(ref:firebase.firestore.CollectionReference | firebase.firestore.Query, filtro:IQFiltro<TIModelo_IQValue>)=>firebase.firestore.CollectionReference | firebase.firestore.Query;
 
     //contiene un valor enum de EtipoPaginar que indica que tipo
     //de paginacion se requiere
@@ -98,7 +99,11 @@ export interface IQFiltro<TIModelo_IvalQ> {
     //con valores para construiri la query, entre los mas destacados
     //esta   _orden que indica el orden de docs,  val que contiene el
     //valor exacto a buscar, ini valor inicial a buscar, entre otros
-    valQuery:TIModelo_IvalQ | null;
+    QValue:TIModelo_IQValue | null;
+
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
+    v_PreGet:any;
 
 }
 
@@ -113,9 +118,9 @@ export interface IQFiltro<TIModelo_IvalQ> {
 //IMPORTANTE: recibe un tipado con sintaxis: TIModelo<IvalQ_Modelo>
 //Recordar: <IvalQ_Modelo>tipado especial enfocado a los valores
 //necesarios para construir la query
-export interface IDoc$<TModelo, TIModelo_IvalQ> {
+export interface IDoc$<TModelo, TIModelo_IQValue> {
     //objetos para rastreo y monitoreo de las querys:
-    behaviors: BehaviorSubject<IQFiltro<TIModelo_IvalQ>>[];
+    behaviors: BehaviorSubject<IQFiltro<TIModelo_IQValue>>[];
     observables: Observable<TModelo[]>[];
     suscriptions: Subscription[];
 
@@ -145,12 +150,16 @@ export interface IDoc$<TModelo, TIModelo_IvalQ> {
 
     //contiene toda la informacion especifica para
     //construir la query
-    QFiltro:IQFiltro<TIModelo_IvalQ>;
+    QFiltro:IQFiltro<TIModelo_IQValue>;
 
     //las funciones next(), error() (y complete()
     //opcional) que se ejecutan una suscrito al
     //observable correspondiente
     RFS:IRunFunSuscribe<TModelo>;
+
+    //funcion que se ejecuta antes de entregar los
+    // doc leidos para customizarlos y enriquezerlos
+    preGetDoc:(doc:TModelo, v_PreGet:any)=>TModelo;
 }
 
 //================================================================================================================================
@@ -172,6 +181,14 @@ export interface IpathDoc$<TModelo> {
         
     }
 
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
+    v_PreGet:any;
+
+    //funcion que se ejecuta antes de entregar los
+    // doc leidos para customizarlos y enriquezerlos
+    preGetDoc:(doc:TModelo, v_PreGet:any)=>TModelo;
+
 }
 
 //================================================================================================================================
@@ -183,113 +200,6 @@ export interface IRunFunSuscribe<TModelo>{
     next: (docsRes: TModelo[] | TModelo) => void;
     error: (err:any) => void;
     complete?:() => void;
-}
-//================================================================================================================================
-/*IUtilCampo*/
-//Interfaz con banderas y configuracion para cada campo de cada modelo
-//Tipado:
-//TCampo:
-//el tipo del campo (suelen ser primitivos  excepto los campos map_ o emb_)
-//
-//ext_Util:
-//recibe un tipado de formato: Modelo_util (es la clase no la interfaz)
-export interface IUtilCampo<TCampo, ext_Util>{
-
-    //nom OBLIGATORIO, almacena el nombre del campo
-    //en string para ser usado en vez de codigo rigido
-    //en caso tal de cambiar el nombre solo se debe hacer
-    //en la clase util de cada coleccion
-    nom:string;
-
-    //nom que contiene toda la ruta path de los subCampos de un campo map
-    //se usa para configurar querys con condiciones en estos campos
-    //los campos array map no requieren esta funcioanlidad ya que
-    //las querys para cualquier campo array en firestore son muy limitadas
-    nomMapPath?:string;
-
-    //validadores es un array de objetos
-    // {
-    //     validator:fn(),
-    //     msg:"el mensaje"
-    // }
-    //donde:
-    //validator es una funcion que recibe el valor del campo
-    //y devuelve true    si la validacion paso sin problemas, y
-    //false    si hubo error de validacion
-    //
-    //msg es el mensaje a mostrar del erro de validacion
-    validadores?:{
-        validator:(campoValor:TCampo)=>boolean;  //una funcion que recibe el valor del campo, lo testea y devuelve un boolean ()
-        msg:string; //un string con el mensaje
-    }[];
-
-    //es una funcion que permite asignar un formateo
-    //personalizado de cada campo del modelo (de acuerdo
-    // a su tipo TCampo), basicamente aqui se aplican
-    //formateadores como quitar espcacios, cambio
-    //de mayusculas a minusculas, ajustes decimales
-    //y demas formateo personalizado que se requiera
-    //esta funcion se llamará automaticamente en el metodo
-    //formatearDoc cuando se quiera crear o editar
-    //el documento o se puede usar de forma manual
-    //(por ejemplo para formatera los valores de consulta)
-    formateoCampo?:(val:TCampo | null)=>TCampo;
-
-    //banderas que se deben activar para cada campo segun corresponda
-    //un campo puede tener varias banderas
-    isRequerido?:boolean;
-    isArray?:boolean;
-    isEmbebido?:boolean;  //indica subcoleccion
-    isFk?:boolean;
-    isMap?:boolean;
-    isVirtual?:boolean;
-
-    //utilidad para los campos number
-    //determina como redondear el numero
-    //y cuantos decimales asignar
-    //esto por medio del metodo
-    //ajustarDecimales()
-    //de la clase _util,
-    //si es null, no ejecuta ajuste
-    expFactorRedondeo?:number | null;
-
-    //propiedad especial para campos number
-    //(incluso los number que simulan ser boolean)
-    //se usa para cuando se requiere consultar
-    //un valor absoluto para generar la consulta
-    //especial de igualdad por el comportamiento
-    //extraño de firestore que no permite consultar
-    //y paginar igualdades de campos number
-    //este campo almacena un numero maximo con cual
-    //poder construir la query de igualdad.
-    //este factor debe estar entre 0 y 1, normalmente
-    // es 1 sin embargo si el campo almacena numeros
-    //con decimales este factor debe contar con un decimal
-    //mayor los registros del campo, ejemplo: si el campo
-    //almacena datos como 12.034 (con 3 decimales) el maximo
-    //factor debe ser   0.0001   (con 4 decimales).
-    //(para los campos que simulan ser boolean el maximo Factor es 1)
-    maxFactorIgualdadQuery?:number;
-
-
-    //banderas de seleccion Solo escoger un grupo
-    //
-    //selecUnica  o   selecMulti   se pueden cargar de
-    //forma estatica y rigida en cada campo o de forma dinamica
-    //una vez se lean en la BD
-    isSelecUnica?:boolean;
-    selecUnica?:TCampo[];
-    isSelecMulti?:boolean;
-    selecMulti?:TCampo[];
-
-    tipoSelec?:"unica"|"multiple";
-    defaultSelec?:()=>TCampo;
-
-    //util  es una propiedad especial solo usada para
-    //campos que sean de tipo map (map_ o mapA_) y
-    //subcolecciones, almacena un objeto de clase util
-    //correspondiente a ese   map   o a esa subcoeccion
-    util?:ext_Util;
 }
 
 //================================================================================================================================
@@ -318,7 +228,7 @@ export interface IUtilCampo<TCampo, ext_Util>{
 //Recordar: <IvalQ_Modelo>tipado especial enfocado a los valores
 //necesarios para construir la query
 //================================================================================================================================
-export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
+export class Service_Util<TModelo, TIModelo, TModelo_Meta, TIModelo_IQValue> {
 
     //================================================================
     /*Propiedades Principales */
@@ -334,11 +244,17 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
     //extraccion de duplicados y demas funcionalidades; para poderlo usar
     // dentro de esta clase es necesario crear el objeto en el service hijo
     //en el constructor. esta propiedad DEBE TENER acceso public
-    public ModeloCtrl_Util:TModeloCtrl_Util;
+    public Modelo_Meta:TModelo_Meta;
+
+    //almacena un limite de docs leidos estandar para TODAS LAS QUERYS,
+    //sin embargo se puede cambiar este numero en la propiedad QFiltro.limite
+    protected limitePaginaPredefinido: number;
 
     //================================================================
     //
     constructor() {
+        //establece limite global para todos los services        
+        this.limitePaginaPredefinido = 50;
     }
 
     //================================================================================================================================
@@ -372,6 +288,10 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
     //error-> al igual que next es una funcion que para cargar en el metodo suscribe()
     //y la cual esat definida en la clase que inyecte este servicio
     //
+    //preGetDocs:
+    //funcion que se ejecuta antes de entregar los
+    // doc leidos para customizarlos y enriquezerlos
+    //
     //pathColeccion:
     //el path de la coleccio o subcoleccion
     //
@@ -379,19 +299,21 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
     //determina si se debe tratar como coleccionGrup (mas especificamente como
     //grupo de subcolecciones)
 
-    protected leerDocs$(doc$:IDoc$<TModelo, TIModelo_IvalQ> | null,
-                        QFiltro:IQFiltro<TIModelo_IvalQ>,
-                        RFS:IRunFunSuscribe<TModelo>,
-                        pathColeccion:string,
-                        isColeccionGrup=false
-                        ):IDoc$<TModelo, TIModelo_IvalQ>{
+    protected leerDocs$(
+        doc$:IDoc$<TModelo, TIModelo_IQValue> | null,
+        QFiltro:IQFiltro<TIModelo_IQValue>,
+        RFS:IRunFunSuscribe<TModelo>,
+        preGetDoc:(doc:TModelo, v_PreLeer:any)=>TModelo,
+        pathColeccion:string,
+        isColeccionGrup=false
+    ):IDoc$<TModelo, TIModelo_IQValue>{
 
         //================================================================
         //inicializar todas las propiedades del control$ necesarias
 
         //determinar si es primera vez para inicializar todo el control$
         if (!doc$ || doc$ == null) {
-            doc$ = <IDoc$<TModelo, TIModelo_IvalQ>>{};
+            doc$ = <IDoc$<TModelo, TIModelo_IQValue>>{};
             doc$.behaviors = [];
             doc$.observables = [];
             doc$.suscriptions = [];
@@ -404,6 +326,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
         doc$.limiteAcumulado = QFiltro.limite;
         doc$.QFiltro = QFiltro;
         doc$.RFS = RFS;
+        doc$.preGetDoc = preGetDoc;
         //================================================================
 
         switch (doc$.QFiltro.tipoPaginar) {
@@ -414,7 +337,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
                         doc$.observables.length == 0 &&
                         doc$.suscriptions.length == 0) {
 
-                        doc$.behaviors[0] = new BehaviorSubject<IQFiltro<TIModelo_IvalQ>>(doc$.QFiltro);
+                        doc$.behaviors[0] = new BehaviorSubject<IQFiltro<TIModelo_IQValue>>(doc$.QFiltro);
                         doc$.observables[0] = this.getObservableQueryDoc(doc$, 0);
                         doc$.suscriptions[0] = doc$.observables[0].subscribe(doc$.RFS);
                     } else {
@@ -433,7 +356,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
                         doc$.observables.length == 0 &&
                         doc$.suscriptions.length == 0) {
 
-                        doc$.behaviors[0] = new BehaviorSubject<IQFiltro<TIModelo_IvalQ>>(doc$.QFiltro);
+                        doc$.behaviors[0] = new BehaviorSubject<IQFiltro<TIModelo_IQValue>>(doc$.QFiltro);
                         doc$.observables[0] = this.getObservableQueryDoc(doc$, 0);
                         doc$.suscriptions[0] = doc$.observables[0].subscribe(doc$.RFS);
                     } else {
@@ -449,7 +372,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
                         doc$.observables.length == 0 &&
                         doc$.suscriptions.length == 0) {
 
-                        doc$.behaviors[0] = new BehaviorSubject<IQFiltro<TIModelo_IvalQ>>(doc$.QFiltro);
+                        doc$.behaviors[0] = new BehaviorSubject<IQFiltro<TIModelo_IQValue>>(doc$.QFiltro);
                         doc$.observables[0] = this.getObservableQueryDoc(doc$, 0);
                         doc$.suscriptions[0] = doc$.observables[0].subscribe(doc$.RFS);
                     } else {
@@ -471,7 +394,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
                         doc$.observables.length == 0 &&
                         doc$.suscriptions.length == 0) {
 
-                        doc$.behaviors[0] = new BehaviorSubject<IQFiltro<TIModelo_IvalQ>>(doc$.QFiltro);
+                        doc$.behaviors[0] = new BehaviorSubject<IQFiltro<TIModelo_IQValue>>(doc$.QFiltro);
                         doc$.observables[0] = this.getObservableQueryDoc(doc$, 0);
                         doc$.suscriptions[0] = doc$.observables[0].subscribe(doc$.RFS);
 
@@ -513,7 +436,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
     //idxBehavior:
     //Especifica el index del behaior al cual se le creará un observable
     //(es indispensable cunado se usa paginacion full, en las demas siempre es 0)
-    private getObservableQueryDoc(doc$:IDoc$<TModelo, TIModelo_IvalQ>, idxBehavior:number): Observable<TModelo[]> {
+    private getObservableQueryDoc(doc$:IDoc$<TModelo, TIModelo_IQValue>, idxBehavior:number): Observable<TModelo[]> {
         //el pipe y el switchMap cambiar el observable dinamicamente cada vez que se
         //requiera un nuevo filtro por medio de behaviorGenerico.next()
         return doc$.behaviors[idxBehavior]
@@ -567,10 +490,17 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
                             //son los solicitados y tiene que esperar hasta la ULTIMA ENTREGA
                             //la cual si son los docs solicitados.
                             let docsLeidos = actions.map(a => {
-                                const data = a.payload.doc.data() as TModelo;
-                                return data;
+                                let data = a.payload.doc.data() as TModelo;
                                 //const _id = a.payload.doc.id; //se puede omitri si uso ids personalizados
+                                
+                                //================================================================
+                                //ejecutar la funcion preGetDoc para customizar los datos
+                                //de acuerdo a las necesidades
+                                data = doc$.preGetDoc(data, doc$.QFiltro.v_PreGet);
+                                //================================================================
+                                return data;
                                 //return { _id, ...data };
+                                
                             });
                             //================================================================
                             //determina la forma en que se entregaran los datos de acuerdo
@@ -578,6 +508,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
                             switch (doc$.QFiltro.tipoPaginar) {
                                 case EtipoPaginar.No:
                                         //--falta---
+                                        doc$.docsList = docsLeidos;
                                     break;
 
                                 case EtipoPaginar.Simple:
@@ -643,10 +574,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
 
                                         const lsD = iniListDocsParcial.concat(docsLeidos).concat(finListDocsParcial);
                                         if (lsD.length > 0) {
-                                            //cast obligado para el objeto:ModeloCtrl_Util a Ctrl_Util
-                                            const MC_U = <Ctrl_Util<TModelo, TIModelo, TModeloCtrl_Util>><unknown>this.ModeloCtrl_Util;
-                                            doc$.docsList = <TModelo[]>MC_U.eliminarItemsDuplicadosArray(lsD, "_id"); //-- solo para _id personalizados
-
+                                            doc$.docsList = this.eliminarItemsDuplicadosArray(lsD, "_id"); //-- solo para _id personalizados
                                         } else {
                                             doc$.docsList = [];
                                         }
@@ -694,6 +622,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
                                 default:
                                     break;
                             }
+                            //================================================================
                             return docsLeidos;
                         })
                     );
@@ -717,6 +646,14 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
     //error-> al igual que next es una funcion que para cargar en el metodo suscribe()
     //y la cual esat definida en la clase que inyecte este servicio
     //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
+    //
+    //preGetDocs:
+    //funcion que se ejecuta antes de entregar los
+    // doc leidos para customizarlos y enriquezerlos
+    //
     //_pathDoc:
     //en este metodo NO SE REQUIERE un pathColeccion ya que este metodo apunta a leer un documento
     //por medio de un _pathDoc en el cual explicitamente va incluido el pathColeccion (incluso puede
@@ -724,10 +661,13 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
     //este el doc), por lo tanto se pasa un _pathDoc con el formato:
     //"/NomColeccion/{id}/nomSubColeccion/{id}..../nomSubColeccion_N/{_id_N}"
     //(RECORDAR:siempre debe terminar el _pathDoc en un _id)
-    protected leer_pathDoc$(pathDoc$:IpathDoc$<TModelo>,
-                              RFS:IRunFunSuscribe<TModelo>,
-                              _pathDoc:string=null
-                              ):IpathDoc$<TModelo> {
+    protected leer_pathDoc$(
+        pathDoc$:IpathDoc$<TModelo>,
+        RFS: IRunFunSuscribe<TModelo>,
+        v_PreGet:any,
+        preGetDoc:(doc:TModelo, v_PreGet:any)=>TModelo,
+        _pathDoc: string = null
+    ): IpathDoc$<TModelo> {
 
         //================================================================
         //por primera vez inicializar del control$
@@ -747,6 +687,8 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
             pathDoc$.observables = [];
         } 
 
+        pathDoc$.v_PreGet = v_PreGet;
+        pathDoc$.preGetDoc = preGetDoc;
         //================================================================        
         //crea un nuevo observador por medio de
         pathDoc$.observables[0] = this.getObservableQuery_pathDoc(pathDoc$, _pathDoc)
@@ -772,14 +714,20 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
             //de documento y no de coleccion y no se requiere obtener metadata especial
             //de firestore como snapShotDocument (a no ser que se requiera el _id automatico 
             //de firestore o requiera un documento snapShot)
-            const doc_afs = <AngularFirestoreDocument<TModelo | TModelo[]>>this.U_afs.doc<TModelo | TModelo[]>(_pathDoc);            
+            const doc_afs = <AngularFirestoreDocument<TModelo>>this.U_afs.doc<TModelo>(_pathDoc);            
             return doc_afs.valueChanges().pipe(map(doc=>{
 
                 //determinar si es un poblar:
                 if (!pathDoc$.opcPopulate) {
-                    return doc as TModelo;                    
+                    //---------------------
+                    //por ahora no se puede usar
+                    //preGetDocs para poblar
+                    //---------------------
+                    return doc;                    
                 }
-                pathDoc$.opcPopulate.docPopulateList[idxObs] = doc as TModelo;
+                //ejecutar la funcion preGetDocs para customizar los datos
+                //de acuerdo a las necesidades
+                pathDoc$.opcPopulate.docPopulateList[idxObs] = pathDoc$.preGetDoc(doc, pathDoc$.v_PreGet);
                 return pathDoc$.opcPopulate.docPopulateList;
             }));
             
@@ -812,8 +760,8 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
     //
     //direccionPaginacion:
     //un string con 2 opciones "previo" | "siguiente", algunos tipos de paginacion solo soportan "siguiente"
-    protected paginarDocs(doc$:IDoc$<TModelo, TIModelo_IvalQ>,
-                         direccionPaginacion: "previo" | "siguiente"):IDoc$<TModelo, TIModelo_IvalQ>{
+    protected paginarDocs(doc$:IDoc$<TModelo, TIModelo_IQValue>,
+                         direccionPaginacion: "previo" | "siguiente"):IDoc$<TModelo, TIModelo_IQValue>{
 
         //para paginar basta con tener el filtro del
         //ultimo behavior activo )
@@ -883,7 +831,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
 
                             QFiltro.docInicial = doc$.snapshotDocsIniciales[doc$.numPaginaActual + 1];
                             doc$.numPaginaActual++;
-                            doc$.behaviors.push(new BehaviorSubject<IQFiltro<TIModelo_IvalQ>>(QFiltro));
+                            doc$.behaviors.push(new BehaviorSubject<IQFiltro<TIModelo_IQValue>>(QFiltro));
                             doc$.observables.push(this.getObservableQueryDoc(doc$, doc$.behaviors.length - 1));
                             doc$.suscriptions.push(doc$.observables[doc$.observables.length - 1].subscribe(doc$.RFS));
                         }
@@ -995,9 +943,10 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
     }
 
     //================================================================
-    //desuscribir observables pricipales
+    /*metodos de desuscripcion de observables*/
+    //para ahorrar memoria
 
-    public unsubscribeDocs$(docs$:IDoc$<TModelo, TIModelo_IvalQ>[]):IDoc$<TModelo, TIModelo_IvalQ>[] {
+    public unsubscribeDocs$(docs$:IDoc$<TModelo, TIModelo_IQValue>[]):IDoc$<TModelo, TIModelo_IQValue>[] {
         for (let i = 0; i < docs$.length; i++) {
             while (docs$[i].behaviors.length > 0) {
                 docs$[i].suscriptions[docs$[i].behaviors.length - 1].unsubscribe();
@@ -1020,7 +969,7 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
         return pathDocs$;
     }
 
-    public unsubscribeAll$(docs$:IDoc$<TModelo, TIModelo_IvalQ>[], pathDocs$:IpathDoc$<TModelo>[]):void {
+    public unsubscribeAll$(docs$:IDoc$<TModelo, TIModelo_IQValue>[], pathDocs$:IpathDoc$<TModelo>[]):void {
 
         //================================================
         //se desuscriben y eliminan TODOS los controls$ 
@@ -1030,26 +979,45 @@ export class Service_Util<TModelo, TIModelo, TModeloCtrl_Util, TIModelo_IvalQ> {
         this.unsubscribe_pathDocs$(pathDocs$);
         //================================================
     }
+
     //================================================================================================================================
-}
-
-//================================================================================================================================
-/*Ctrl_Util*/
-//Clase abstracta con utilidades especiales enfocadas al controllers y service,
-//esta clase se debe heredar para cada Modelo_Util para poder que a cada campo
-//se le implementen utilidades especificas como: formatos, validadores y demas.
-export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
-
-    constructor() {
+    /*Utilitarios*/
+    //================================================================
+    /*getModel()*/
+    //retorna un objeto del modelo con los campos inicializado
+    public getModel():TModelo{
+        let Model = <TModelo>{};
+        for (const c_m in this.Modelo_Meta) {
+            //garantizar que sean campos del modelo
+            if(this.Modelo_Meta[c_m]["nom"] && this.Modelo_Meta[c_m]["default"]){
+                Model[<string>c_m] = this.Modelo_Meta[c_m]["default"];
+            }
+        }
+        return Model;
     }
+    //================================================================
+    /*getPathColeccion()*/
+    //obtener el path de la coleccion o subcoleccion,
+    //en las colecciones devuelve el mismo nom ya qeu son Raiz
+    //Parametros:
+    //
+    //pathBase ->  path complemento para construir el el path completo
+    //             util para las subcolecciones
+    public getPathColeccion(pathBase:string=""):string{
+        //cast obligado:
+        const metaColeccion = <IMetaColeccion><unknown>this.Modelo_Meta
+
+        if (pathBase == "") {
+            return `${metaColeccion.__nomColeccion}`;
+        }else{
+            return `${pathBase}/${metaColeccion.__nomColeccion}`;
+        }
+    }    
 
     //================================================================
     /*generarIds()*/
-    //generar _IDs para documentos firebase
-    //Parametros:
-    //_orderKey:
-    //el numero del ultimo _id para generear el nuevo
-    public generarIds():string{
+    //generar _ids personalizados con base en tiempo para documentos firebase
+    protected generarIds():string{
 
         //================================================================
         // obtener la fecha en UTC en HEXA,:  
@@ -1074,6 +1042,7 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
         //================================================================
 
     }
+
     //================================================================
     /*formatearDoc()*/
     //permite depurar y eliminar campos que no seran almacenados en la
@@ -1101,20 +1070,20 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
     //los campos  de los  map a editar por medio de una ruta:
     //"map_campo.subcampo1.subcampo11.subcampoN"
     //por lo tanto desde un llamado externo al recursivo se debe dejar con el valor predeterminado de  ""
-    protected formatearDoc(Doc: TModelo | any, modelo_Util:TModelo_Util, isEdicionFurte=false, path=""):TModelo{
+    protected formatearDoc(Doc: TModelo | any, modelo_Meta:TModelo_Meta, isEdicionFurte=false, path=""):TModelo{
 
         //================================================================
         //se asignan los objetos tipados a variables temporales
         //de tipo any para usar caracteristicas fuera de typescript
-        let mod_U = <any> modelo_Util;
+        let mod_M = <any> modelo_Meta;
         let DocResult = <TModelo>{};
         //================================================================
 
         for (const c in Doc as TModelo) {
-            for (const c_U in mod_U) {
+            for (const c_U in mod_M) {
                 if (c == c_U && c != "constructor") {
 
-                    const m_u_campo = <IUtilCampo<any, any>>mod_U[c];
+                    const m_u_campo = <IMetaCampo<any, any>>mod_M[c];
                     //================================================
                     //retirar los campos virtuales
                     if (m_u_campo.isVirtual) {
@@ -1142,15 +1111,15 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
                             const aDoc = <any>Doc[c];
                             const raDoc = [];
                             for (let i = 0; i < aDoc.length; i++) {
-                                raDoc.push(this.formatearDoc(aDoc[i], m_u_campo.util));
+                                raDoc.push(this.formatearDoc(aDoc[i], m_u_campo.extMeta));
                             }
                             DocResult[c] = <any>raDoc;
                             continue;
                         } else {
                             if (isEdicionFurte) {
-                                DocResult = Object.assign(DocResult, this.formatearDoc(Doc[c], m_u_campo.util, isEdicionFurte, `${path}${c}.`));
+                                DocResult = Object.assign(DocResult, this.formatearDoc(Doc[c], m_u_campo.extMeta, isEdicionFurte, `${path}${c}.`));
                             } else {
-                                DocResult[c] = <any>this.formatearDoc(Doc[c], m_u_campo.util);
+                                DocResult[c] = <any>this.formatearDoc(Doc[c], m_u_campo.extMeta);
                             }
                             continue;
                         }
@@ -1175,47 +1144,49 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
     }
 
     /*formatearCampos()*/
-    //--falta--//
-    protected formatearCampos(Doc:TModelo | any, modelo_Util:TModelo_Util):TModelo{
+    //--esta dañado--//
+    protected formatearCampos(Doc:TModelo | any, modelo_Meta:TModelo_Meta):TModelo{
         for (const c in Doc) {
-            for (const c_U in modelo_Util) {
+            for (const c_U in modelo_Meta) {
                 if (c == c_U && c != "constructor") {
 
-                    const m_u_campo = <IUtilCampo<any, any>>modelo_Util[c];
+                    const m_u_campo = <IMetaCampo<any, any>>modelo_Meta[c];
                     //================================================
                     //determinar si el campo tienen la propiedad para formatear
-                    if(m_u_campo.formateoCampo){
-                        //================================================
-                        //los campos embebidos No se formatean por ahora
-                        if(modelo_Util[c].isEmbebido){
-                            continue;
-                        }
-                        //================================================
-                        //los campos map y arrayMap se
-                        //formatean recursivamente
-                        if(m_u_campo.isMap){
-                            if (m_u_campo.isArray && Array.isArray(Doc[c])) {
-                                for (let i = 0; i < Doc[c].length; i++) {
-                                    Doc[c][i] = this.formatearCampos(Doc[c][i], m_u_campo.util);
-                                }
-                            } else {
-                                Doc[c] = this.formatearCampos(Doc[c], m_u_campo.util);
-                            }
-                            continue;
-                        }
-                        //================================================
-                        //los campos array basico tienen se
-                        //formatean recursivamente
-                        if(m_u_campo.isArray && Array.isArray(Doc[c])){
-                            for (let i = 0; i < Doc[c].length; i++) {
-                                Doc[c][i] = this.formatearCampos(Doc[c][i], m_u_campo.util);
-                            }
-                            continue;
-                        }
-                        //================================================
-                        //Formatear campo normal:
-                        Doc[c] = m_u_campo.formateoCampo(Doc[c]);
-                    }
+
+                    // if(m_u_campo.formateoCampo){
+                    //     //================================================
+                    //     //los campos embebidos No se formatean por ahora
+                    //     if(modelo_Meta[c].isEmbebido){
+                    //         continue;
+                    //     }
+                    //     //================================================
+                    //     //los campos map y arrayMap se
+                    //     //formatean recursivamente
+                    //     if(m_u_campo.isMap){
+                    //         if (m_u_campo.isArray && Array.isArray(Doc[c])) {
+                    //             for (let i = 0; i < Doc[c].length; i++) {
+                    //                 Doc[c][i] = this.formatearCampos(Doc[c][i], m_u_campo.util);
+                    //             }
+                    //         } else {
+                    //             Doc[c] = this.formatearCampos(Doc[c], m_u_campo.util);
+                    //         }
+                    //         continue;
+                    //     }
+                    //     //================================================
+                    //     //los campos array basico tienen se
+                    //     //formatean recursivamente
+                    //     if(m_u_campo.isArray && Array.isArray(Doc[c])){
+                    //         for (let i = 0; i < Doc[c].length; i++) {
+                    //             Doc[c][i] = this.formatearCampos(Doc[c][i], m_u_campo.util);
+                    //         }
+                    //         continue;
+                    //     }
+                    //     //================================================
+                    //     //Formatear campo normal:
+                    //     Doc[c] = m_u_campo.formateoCampo(Doc[c]);
+                    // }
+
                     //================================================
                 }
             }
@@ -1227,7 +1198,7 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
     /*copiarData()*/
     //clonacion de objetos JSON a  diferentes niveles de profundidad
     //CUIDADO CON EL STACK, NO PUEDE SER MUY PROFUNDO
-    public copiarData(data:any | any[]):any | any[]{
+    protected copiarData(data:any | any[]):any | any[]{
 
         let dataCopia:any;
 
@@ -1252,6 +1223,7 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
         }
         return dataCopia;
     }
+
     //================================================================
     /*ajustarDecimale()*/
     //redondea un numero y ajusta decimales, tomado del sitio oficial:
@@ -1266,7 +1238,7 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
     //       para las decenas (decenas exp=1, centena exp=2, miles exp=3...) se usan numeros positivos
     //       para las decimales (decimas exp=-1, centecimas exp=-2, milesimas exp=-3...) se usan numeros negativos
     //       si exp es 0 ejecuta la operacion de redondeo por default de la libreria Math
-    public ajustarDecimales(type:"round" | "floor" | "ceil", numValue:any, exp:number):number{
+    protected ajustarDecimales(type:"round" | "floor" | "ceil", numValue:any, exp:number):number{
 
         //determinar si  exp no esta definido para que
         //no haga ninguna operacion
@@ -1292,12 +1264,12 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
         numValue = numValue.toString().split('e');
         numValue = +(numValue[0] + 'e' + (numValue[1] ? (+numValue[1] + exp) : exp));
         return numValue;
-    }
+    }   
     //================================================================
     /*getLlaveFinBusquedaStrFirestore()*/
     //obtener llave para la condición del búsqueda limite mayor para
     //campos string en firestore
-    public getLlaveFinBusquedaStrFirestore(llaveInicial:string):string{
+    protected getLlaveFinBusquedaStrFirestore(llaveInicial:string):string{
 
         let llaveFinal:string = llaveInicial.substring(0, llaveInicial.length-1);
         let charIni:string = llaveInicial.charAt(llaveInicial.length-1);
@@ -1338,7 +1310,7 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
     //data -> array que contiene los objetos a testear y eliminar su duplicado
     //campoRef -> el nombre del campo del cual por el cual se analizaran los duplicados
     //            (normalmente es el campo identificado o   _id)
-    public eliminarItemsDuplicadosArray(datos:any[], campoRef:string):any[]{
+    protected eliminarItemsDuplicadosArray(datos:TModelo[], campoRef:string):any[]{
 
         if(datos.length > 0){
 
@@ -1364,6 +1336,7 @@ export class Ctrl_Util<TModelo, TIModelo, TModelo_Util> {
             return [];
         }
     }
-}
 
+    //================================================================================================================================
+}
 

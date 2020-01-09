@@ -49,20 +49,14 @@
 
 
 export interface IRol<TExtend>{
-    _id? : TExtend;  //_id personalizado creado por el modulo uuid
-    _pathDoc? : TExtend; 
+    _id?: TExtend;  //_id personalizado creado por el modulo uuid
+    _pathDoc?: TExtend;
 
-    codigo? : TExtend
-    mapA_permisos? : TExtend | ImapA_permisos<TExtend>[];
-}
+    strCodigo?: TExtend;
+    codigo?: TExtend;
 
-export interface ImapA_permisos<TExtend>{
-    nomColeccion:TExtend;
-    read:TExtend;
-    write:TExtend;
-    create:TExtend;
-    update:TExtend;
-    delete:TExtend;
+    emb_Permisos: TExtend;
+
 }
 
 //================================================================================================================================
@@ -114,26 +108,19 @@ export interface ImapA_permisos<TExtend>{
 //a no ser que sobre dichos campos NO SE REALICEN CONSULTAS
 
 export class Rol implements IRol<any> {
+
     _id:string =""; //se asignará dinamicamente
     _pathDoc:string =""; //se asignará dinamicamente
 
-    //Roles Pre configurados:
-    //invitado
-    //empleado
-    //administrador
-    //programador
-    codigo:string ="invitado";
-    mapA_permisos:mapA_permisos[] = [];
+    //permite determinar el nombre 
+    //y nivel de cada rol, codigo es number
+    //ya que cada rol tiene un nivel numerico diferente 
+    strCodigo?: string = "invitado";
+    codigo:number = 10^1;
+    
+    emb_Permisos: any;
 
 }
 
-export class mapA_permisos implements ImapA_permisos<any>{
-    nomColeccion:string ="";
-    read:number =0;
-    write:number =0;
-    create:number =0;
-    update:number =0;
-    delete:number =0;
-}
 //================================================================================================================================
 

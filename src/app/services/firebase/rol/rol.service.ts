@@ -7,9 +7,43 @@ import { AngularFirestore, AngularFirestoreCollection, AngularFirestoreDocument 
 import { Observable, observable, Subject, BehaviorSubject, } from 'rxjs';
 import { map, switchMap, } from 'rxjs/operators';
 
-import { IRol, Rol } from '../../../models/firebase/rols/rol';
-import { RolCtrl_Util, Iv_PreLeer_Rol, Iv_PreModificar_Rol, IValQ_Rol } from './rolCtrl_Util';
-import { Service_Util, EtipoPaginar, IQFiltro,IDoc$, IpathDoc$, IRunFunSuscribe } from '../_Util';
+import { IRol, Rol } from '../../../models/firebase/rol/rol';
+import { Rol_Meta } from './rol_Meta';
+import { Service_Util, EtipoPaginar, IQFiltro,IDoc$, IpathDoc$, IRunFunSuscribe, IQValue } from '../service_Util';
+
+//================================================================================================================================
+/*INTERFACES y ENUMs especiales para cada modelo de service*/
+//Interfaces especiales para implementar contenedores de 
+//objetos utilitarios para los metodos Pre  
+//deben llevar el sufijo   _Modelo   del moedelo para no generar 
+//conflictos con otras colecciones cuando se haga   import
+//Ejemplo: Iv_PreLeer{aqui el sufijo de coleccion o subcoleccion}
+
+/*Iv_PreGet_{Modelo}*/
+//OPCIONAL el agregar propiedades
+//contiene propiedades externar al modelo (mas especificamente IModelo)
+//para realizar calculos o enriquecer los docs leidos
+//se recomienda crear objetos de esta interfaz en la 
+//propiedad-funcion next de los objetos RFS
+export interface Iv_PreGet_Rol{
+
+}
+
+/*Iv_PreMod_{Modelo}*/
+//OPCIONAL el agregar propiedades
+//contiene propiedades externar al modelo (mas especificamente IModelo) 
+//para realizar calculos o enriquecer el doc a modificar (ya sea crear o editar) 
+export interface Iv_PreMod_Rol{
+
+}
+
+/*IQValue_{Modelo}*/
+//OPCIONAL el agregar propiedades
+//contiene propiedades personalizadas para este modelo_util para 
+//construir querys personalizadas y especificas
+export interface IQValue_Rol extends IQValue{
+
+}
 
 //================================================================================================================================
 /*SERVICE DEL MODELO*/
@@ -29,17 +63,10 @@ import { Service_Util, EtipoPaginar, IQFiltro,IDoc$, IpathDoc$, IRunFunSuscribe 
 //SubColecciones: class Emb_ModeloService
 //
 
-export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRol<IValQ_Rol>> {
+export class RolService extends Service_Util< Rol, IRol<any>,  Rol_Meta, IRol<IQValue_Rol>> {
 
     //================================================================
     //Propiedaes utilitarias
-    
-    //almacena el path correspondiente a este coleccion o subcoleccion
-    private _pathColeccion: string;
-
-    //almacena un limite de docs leidos estandar para TODAS LAS QUERYS,
-    //sin embargo se puede cambiar este numero en la propiedad QFiltro.limite
-    private limitePaginaPredefinido: number;
 
     //================================================================
     constructor(private _afs: AngularFirestore) {
@@ -53,17 +80,12 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
         super.U_afs = this._afs;
         
         //Objeto con metodos y propiedeades de utilidad para el service
-        this.ModeloCtrl_Util = new RolCtrl_Util();
+        this.Modelo_Meta = new Rol_Meta();
 
-        //establece un limite predefinido (es personalizable)
-        this.limitePaginaPredefinido = 4;//10;
-
-        //================================================================
-        //Configuracion de pathColeccion
-        //para las colecciones SIEMPRE se usa el path coleccion generado 
-        //desde la clase ctrl_Util
-        //
-        this._pathColeccion = this.ModeloCtrl_Util.getPathColeccion();
+        //establece un limite predefinido para este 
+        //service (es personalizable incluso se puede 
+        //omitir y dejar el de la clase padre)
+        //this.limitePaginaPredefinido = 10;
         //================================================================
     }
     //================================================================================================================================
@@ -159,10 +181,14 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
     //RFS:
     //objeto con las funciones next() y error() para ejecutar una vez este suscrito
     //
-    //valQuery:
-    //recibe un objeto creado a partir de la interfaz IModelo<IvalQ_Modelo>
+    //QValue:
+    //recibe un objeto creado a partir de la interfaz IModelo<IQValue_Modelo>
     //que a su vez contiene los valores necesarios para construir la query
-    //(valores a buscar, rangos, iniciales, entre otros)
+    //(valores como:  buscar, rangos, iniciales, entre otros)
+    //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
     //
     //limite:
     //indica el numero maximo de docs que puede leer en la query, si no se
@@ -171,29 +197,31 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
     //docInicial:
     //solo es necesario recibirlo si por alguna razon se quiere paginar 
     //No teniendo como base los snapshotsDocs sino otra cosa
-    public get$(doc$:IDoc$<Rol, IRol<IValQ_Rol>> | null, 
-                        RFS:IRunFunSuscribe<Rol>, 
-                        valQuery:IRol<IValQ_Rol> | null, 
-                        limite=this.limitePaginaPredefinido, 
-                        docInicial:any=null, 
-                        ):IDoc$<Rol, IRol<IValQ_Rol>>{
-        
+    public get$(
+        doc$:IDoc$<Rol, IRol<IQValue_Rol>> | null, 
+        RFS: IRunFunSuscribe<Rol>,
+        QValue: IRol<IQValue_Rol> | null,
+        v_PreGet:Iv_PreGet_Rol| null,
+        limite = this.limitePaginaPredefinido,
+        docInicial: any = null,
+    ): IDoc$<Rol, IRol<IQValue_Rol>> {
+
         //================================================
         //configurar el pathColeccion solo para coleccion:
-        const pathColeccion = this._pathColeccion; 
+        const pathColeccion = this.getPathColeccion(); 
         const isColeccionGrup = false;       
         //================================================================
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
         const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
-                      QFiltro: IQFiltro<IRol<IValQ_Rol>>) => {
+                      QFiltro: IQFiltro<IRol<IQValue_Rol>>) => {
 
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             
             //================================================================
             //ordenar, limitar y prepaginar con docInicial
-            cursorQueryRef = cursorQueryRef.orderBy(this.ModeloCtrl_Util._id.nom, QFiltro.valQuery._id._orden || "asc") 
+            cursorQueryRef = cursorQueryRef.orderBy(this.Modelo_Meta._id.nom, QFiltro.QValue._id._orden || "asc") 
             cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);
             if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
                 cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);                    
@@ -206,15 +234,16 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
         //Configurar el filtro con las propiedades adicionales como:
         //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
         //el orden y demas propiedades
-        const QFiltro:IQFiltro<IRol<IValQ_Rol>> = {
+        const QFiltro:IQFiltro<IRol<IQValue_Rol>> = {
             query : query,
             docInicial : docInicial,
             limite: limite,
             tipoPaginar : EtipoPaginar.Full,
-            valQuery : (valQuery && valQuery != null)? valQuery : <IRol<IValQ_Rol>>{_id:{_orden:"asc"}}
+            QValue : (QValue && QValue != null)? QValue : <IRol<IQValue_Rol>>{_id:{_orden:"asc"}},
+            v_PreGet: v_PreGet
         }
         //================================================================
-        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
+        return this.leerDocs$(doc$, QFiltro, RFS, this.preGetDocs, pathColeccion, isColeccionGrup);
     }
 
     /*geId$()*/
@@ -233,32 +262,38 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
     //RFS:
     //objeto con las funciones next() y error() para ejecutar una vez este suscrito
     //
-    //valQuery:
-    //recibe un objeto creado a partir de la interfaz IModelo<IvalQ_Modelo>
+    //QValue:
+    //recibe un objeto creado a partir de la interfaz IModelo<IQValue_Modelo>
     //que a su vez contiene los valores necesarios para construir la query
-    //(valores a buscar, rangos, iniciales, entre otros)
+    //(valores como:  buscar, rangos, iniciales, entre otros)
+    //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
     //
     //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc
-    public getId$(doc$:IDoc$<Rol, IRol<IValQ_Rol>> | null, 
-                          RFS:IRunFunSuscribe<Rol>, 
-                          valQuery:IRol<IValQ_Rol> | null
-                          ):IDoc$<Rol, IRol<IValQ_Rol>>{
+    public getId$(
+        doc$:IDoc$<Rol, IRol<IQValue_Rol>> | null, 
+        RFS: IRunFunSuscribe<Rol>,
+        QValue: IRol<IQValue_Rol> | null,
+        v_PreGet:Iv_PreGet_Rol | null        
+    ): IDoc$<Rol, IRol<IQValue_Rol>> {
 
         //================================================
         //configurar el pathColeccion solo para coleccion:
-        const pathColeccion = this._pathColeccion; 
+        const pathColeccion = this.getPathColeccion();
         const isColeccionGrup = false;    
         //================================================================
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
         const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
-                     QFiltro: IQFiltro<IRol<IValQ_Rol>>) => {
+                     QFiltro: IQFiltro<IRol<IQValue_Rol>>) => {
 
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             //================================================================
             //Query Condiciones:
-            cursorQueryRef = cursorQueryRef.where(this.ModeloCtrl_Util._id.nom, "==", QFiltro.valQuery._id.val);            
+            cursorQueryRef = cursorQueryRef.where(this.Modelo_Meta._id.nom, "==", QFiltro.QValue._id.val);            
             //================================================================
             //no se requiere paginar            
             return cursorQueryRef;
@@ -267,15 +302,68 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
         //Configurar el filtro con las propiedades adicionales como:
         //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
         //el orden y demas propiedades
-        const QFiltro:IQFiltro<IRol<IValQ_Rol>> = {
+        const QFiltro:IQFiltro<IRol<IQValue_Rol>> = {
             query : query,
             docInicial : null,
             limite: 1,
             tipoPaginar : EtipoPaginar.No,
-            valQuery : (valQuery && valQuery != null)? valQuery : <IRol<IValQ_Rol>>{_id:{_orden:"asc"}}
+            QValue : (QValue && QValue != null)? QValue : <IRol<IQValue_Rol>>{_id:{_orden:"asc"}},
+            v_PreGet:v_PreGet
         }        
         //================================================================
-        return this.leerDocs$(doc$, QFiltro, RFS, pathColeccion, isColeccionGrup);
+        return this.leerDocs$(doc$, QFiltro, RFS, this.preGetDocs, pathColeccion, isColeccionGrup);
+    }
+
+    public getPorCodigo$(
+        doc$:IDoc$<Rol, IRol<IQValue_Rol>> | null, 
+        RFS: IRunFunSuscribe<Rol>,
+        valQuery: IRol<IQValue_Rol> | null,
+        v_PreGet:Iv_PreGet_Rol | null,
+        limite = this.limitePaginaPredefinido,
+        docInicial: any = null,
+    ): IDoc$<Rol, IRol<IQValue_Rol>> {
+
+        //================================================
+        //configurar el pathColeccion solo para coleccion:
+        const pathColeccion = this.getPathColeccion();
+        const isColeccionGrup = false;
+        //================================================================
+        //Configurar la query de esta lectura:
+        //esta query es una funcion que se cargará al behavior como filtro 
+        //al momento de que este se ejecute
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query,
+            QFiltro: IQFiltro<IRol<IQValue_Rol>>) => {
+
+            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+
+            //================================================================
+            //determinar los niveles de codigo para cada rol
+            cursorQueryRef = cursorQueryRef.where(this.Modelo_Meta.codigo.nom, "<=", QFiltro.QValue.codigo.max);
+            //================================================================
+            //ordenar, limitar y prepaginar con docInicial
+            cursorQueryRef = cursorQueryRef.orderBy(this.Modelo_Meta._id.nom, QFiltro.QValue._id._orden || "asc")
+            cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);
+            if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);
+            }
+            //================================================================
+
+            return cursorQueryRef;
+        };
+        //================================================================
+        //Configurar el filtro con las propiedades adicionales como:
+        //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
+        //el orden y demas propiedades
+        const QFiltro: IQFiltro<IRol<IQValue_Rol>> = {
+            query: query,
+            docInicial: docInicial,
+            limite: limite,
+            tipoPaginar: EtipoPaginar.No,
+            QValue: (valQuery && valQuery != null) ? valQuery : <IRol<IQValue_Rol>>{ codigo: { _orden: "asc" } },
+            v_PreGet:v_PreGet
+        }
+        //================================================================
+        return this.leerDocs$(doc$, QFiltro, RFS, this.preGetDocs, pathColeccion, isColeccionGrup);
     }
 
     //================================================================================================================================
@@ -289,17 +377,23 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
     //RFS:
     //objeto con las funciones next() y error() para ejecutar una vez este suscrito
     //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
+    //
     //path_Id:
     //obligatorio, contiene el la RUTA CON ID del documento a leer, solo por 
     //primera vez se recibe un null y eso en casos que no se requiera 
     //inmediatamente obtener dicho doc
     //
-    public get_pathDoc$(pathDoc$:IpathDoc$<Rol>, 
-                                RFS:IRunFunSuscribe<Rol>, 
-                                _pathDoc:string | null 
-                                ):IpathDoc$<Rol>{
+    public get_pathDoc$(
+        pathDoc$:IpathDoc$<Rol>, 
+        RFS: IRunFunSuscribe<Rol>,
+        v_PreGet:Iv_PreGet_Rol | null,
+        _pathDoc: string | null
+    ): IpathDoc$<Rol> {
 
-        return this.leer_pathDoc$(pathDoc$, RFS, _pathDoc);
+        return this.leer_pathDoc$(pathDoc$, RFS, v_PreGet, this.preGetDocs, _pathDoc);
     }
 
     //================================================================================================================================
@@ -315,9 +409,9 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
     //se debe recibir alguna de las 2 opciones "previo" | "siguiente"
     //Recordar que no todos los tipos de paginacion aceptan "previo"
     //
-    public paginar$(doc$:IDoc$<Rol, IRol<IValQ_Rol>>, 
+    public paginar$(doc$:IDoc$<Rol, IRol<IQValue_Rol>>, 
                             direccionPaginacion: "previo" | "siguiente"
-                            ):IDoc$<Rol, IRol<IValQ_Rol>> {
+                            ):IDoc$<Rol, IRol<IQValue_Rol>> {
 
         return this.paginarDocs(doc$, direccionPaginacion);
     }
@@ -334,13 +428,13 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public crear(docNuevo: Rol, v_PreMod?:Iv_PreModificar_Rol): Promise<void> {
+    public crear(docNuevo: Rol, v_PreMod?:Iv_PreMod_Rol): Promise<void> {
 
         //================================================================
         //pre modificacion y formateo del doc
-        docNuevo = this.ModeloCtrl_Util.preCrearOActualizar(docNuevo,true, false, v_PreMod);
+        docNuevo = this.preModDoc(docNuevo,true, false, v_PreMod);
         //================================================================
-        return this.crearDoc(docNuevo, this.ModeloCtrl_Util.getPathColeccion());
+        return this.crearDoc(docNuevo, this.getPathColeccion());
     }
 
     //================================================================
@@ -360,18 +454,13 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public actualizar(docEditado: Rol, isEditadoFuerte = false, v_PreMod?:Iv_PreModificar_Rol): Promise<void> {
-        //TEST--------------------------------------------
-        docEditado = <Rol>{
-            _id: "",
-            codigo:""
-        }
-        //------------------------------------------------
+    public actualizar(docEditado: Rol, isEditadoFuerte = false, v_PreMod?:Iv_PreMod_Rol): Promise<void> {
+
         //================================================================
         //pre modificacion y formateo del doc
-        docEditado = this.ModeloCtrl_Util.preCrearOActualizar(docEditado, false, isEditadoFuerte, v_PreMod);
+        docEditado = this.preModDoc(docEditado, false, isEditadoFuerte, v_PreMod);
         //================================================================
-        return this.actualizarDoc(docEditado, this.ModeloCtrl_Util.getPathColeccion());
+        return this.actualizarDoc(docEditado, this.getPathColeccion());
 
     }
     //================================================================
@@ -386,10 +475,109 @@ export class RolService extends Service_Util< Rol, IRol<any>,  RolCtrl_Util, IRo
         //Test-------------------------------------------
         _id = "2-a940c69dbf6536cc";
         //------------------------------------------------
-        return this.eliminarDoc(_id, this.ModeloCtrl_Util.getPathColeccion());
+        return this.eliminarDoc(_id, this.getPathColeccion());
+    }
+
+    //================================================================================================================================
+    /*preCrearOActualizar()*/
+    //metodo que debe ejecutarse antes de crear o actualizar un documento
+    //Parametros:
+    //doc
+    //el documento que se desea crear o actualizar
+    //
+    //isCrear:
+    //determina si se desea crear o actualizar
+    //
+    //isEditadoFuerte:
+    //cuando se edita un documento se determina su los campos especiales como
+    // map_  y  mapA_  se deben reemplazar completamente
+    //
+    //v_PreMod: 
+    //objeto que contiene datos para enriqueser o realizar operaciones
+    //de acuerdo a la coleccion (determinar si se crea o se actualiza, 
+    //generar _ids y )
+    //
+    //path_EmbBase:
+    //es exclusivo y OBLIGATORIO para subcolecciones, se recibe el pathBase 
+    //para poder modificar el documento de la subcoleccion
+    //   
+    //_idExterno:
+    //si se requiere asignar un _id especial (No el personalizado) proveido por 
+    //alguna api externa (por ejemplo en el caso de los _id de auth proveeidos 
+    //por la api de registro de google)
+    private preModDoc(
+        doc: Rol,
+        isCrear: boolean = true,
+        isEditadoFuerte = false,
+        v_PreMod?: Iv_PreMod_Rol,
+        path_EmbBase?: string,
+        _idExterno?: string
+    ): Rol {
+
+        //================================================================
+        //se determina si se desea crear el documento para su configuracion
+        if (isCrear) {
+            //================================================================
+            //aqui se genera el nuevo _id a guardar
+            doc._id = this.generarIds();
+            //================================================================
+            //aqui se genera el   _pathDoc   del doc a crear, en el caso
+            // de las colecciones SIEMPRE será el pathColeccion estandar
+            //IMPORTANTE: SOLO PARA COLECCIONES
+            doc._pathDoc = `${this.getPathColeccion(path_EmbBase || "")}/${doc._id}`;
+            //================================================================
+        }
+        //----------------[EN CONSTRUCCION]----------------
+        if (v_PreMod) {
+
+        }
+        //------------------------------------------------
+        //================================================================
+        //aqui se formatean los datos del documento (se quitan campos 
+        //inecesarios (no almacenables))
+        doc = this.formatearDoc(doc, this.Modelo_Meta, isEditadoFuerte);
+        //================================================================                               
+        return doc;
     }
 
     //================================================================
+    /*preGetDocs()*/
+    //Funcion que debe ejecutarse antes de entregar CADA DOCUMENTO LEIDO 
+    //(documento por documento) en el pipe del observable de lectura
+    //
+    //IMPORTANTE: este metodo se usa tambien como variable-funcion
+    //para ser pasado a la clase padre como parametro
+    //
+    //Parametros:
+    //docs ->  documento o documentos que se leyeron de firebase
+    //v_PreLeer-> objeto que contiene datos para enriqueser o realizar operaciones
+    //          (por ejemplo cargar los campos virtuales) antes de entregar a
+    //          la vista o componente correspondiente
+
+    private preGetDocs(
+        doc:Rol, 
+        v_PreGet?: Iv_PreGet_Rol
+    ):Rol {
+
+        if(v_PreGet && v_PreGet != null){
+            //================================================================
+            //aqui todo lo referente a la modificacion de cada documento antes 
+            //de devolverlo
+            
+            //================================================================
+        }
+        //retornar doc ya customizado y enriquecido
+        return doc;
+    }
+    //================================================================
+    /*crearDocsPrueba()*/
+    //permite crear hasta 10 documentos para hacer pruebas
+    // private crearDocsPrueba(isActivado:boolean){
+    //     if (isActivado) {
+
+    //         this.getModel();            
+    //     }
+    // }
 
 }
 //================================================================================================================================

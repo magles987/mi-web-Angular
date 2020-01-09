@@ -16,10 +16,10 @@ import { environment } from '../environments/environment';
 import { ReactiveFormsModule  } from '@angular/forms';
 
 import { AuthService } from './services/firebase/auth/auth.service';
-import { UsuarioService } from './services/firebase/usuarios/usuario.service';
+import { UsuarioService } from './services/firebase/usuario/usuario.service';
 import { ProductosComponent } from './sub-components/productos/productos.component';
-import { ProductoService } from './services/firebase/productos/producto.service';
-import { RolService } from './services/firebase/rols/rol.service';
+import { ProductoService } from './services/firebase/producto/producto.service';
+import { RolService } from './services/firebase/rol/rol.service';
 
 
 @NgModule({

@@ -1,4 +1,3 @@
-
 //================================================================================================================================
 /*IModelo  interfaz*/
 //La interfaz de modelo debe nombrarse en singular
@@ -78,9 +77,9 @@ export interface IMapA_misc<TExtend>{
 /*Modelo  clase*/
 //la fuertemente tipada es en la que se declaran las clases (preferible no tener constructor y 
 //NO DEBE TENER METODOS) y se usaran para cuando se requiera crear objetos (inclusive 
-//instanciarlos) que necesiten un fuerte tipado, los campos deben tener su respectivo
-//tipo y no pueden ser opcionales (excepto los especiales como los virtuales   v_ , emb_ , fk_ 
-//y/u otros que se definan como especiales )
+//inicializarlos aunque no es necesario) que necesiten un fuerte tipado, los campos deben tener 
+//su respectivo tipo y no pueden ser opcionales (excepto los especiales como los 
+//virtuales   v_ , emb_ , fk_ y/u otros que se definan como especiales )
 //
 //IMPORTANTE:
 //los campos   emb_   que apuntan a subcolecciones  y los campos   fk_  que almacenan
@@ -144,6 +143,5 @@ export class Map_miscelanea implements IMap_miscelanea<any>{
 export class MapA_misc implements IMapA_misc<any>{
     color:string = "";
 }
-
 //================================================================================================================================
 
