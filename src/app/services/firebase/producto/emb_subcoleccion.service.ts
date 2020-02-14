@@ -13,7 +13,7 @@ import { map, switchMap, } from 'rxjs/operators';
 
 import { Iemb_SubColeccion, emb_SubColeccion } from '../../../models/firebase/producto/emb_subColeccion';
 import { emb_SubColeccion_Meta} from './emb_subcoleccion_Meta';
-import { Service_Util, IQValue, EtipoPaginar, IQFiltro,IDoc$, IpathDoc$, IRunFunSuscribe } from '../service_Util';
+import { FSModelService, IQValue, ETypePaginate, IQFilter,IControl$, IpathControl$, IRunFunSuscribe } from '../fs_Model_Service';
 
 //================================================================================================================================
 /*INTERFACES y ENUMs especiales para cada modelo de service*/
@@ -21,7 +21,7 @@ import { Service_Util, IQValue, EtipoPaginar, IQFiltro,IDoc$, IpathDoc$, IRunFun
 //objetos utilitarios para los metodos Pre  
 //deben llevar el sufijo   _Modelo   del moedelo para no generar 
 //conflictos con otras colecciones cuando se haga   import
-//Ejemplo: Iv_PreLeer{aqui el sufijo de coleccion o subcoleccion}
+//Ejemplo: Iv_PreGet{aqui el sufijo de coleccion o subcoleccion}
 
 /*Iv_PreGet_{Modelo}*/
 //OPCIONAL el agregar propiedades
@@ -66,7 +66,7 @@ export interface IQValue_emb_SubColeccion extends IQValue{
 //Colecciones:  class ModeloService
 //SubColecciones: class Emb_ModeloService
 //
-export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb_SubColeccion<any>, emb_SubColeccion_Meta, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
+export class emb_subColeccionService extends FSModelService<emb_SubColeccion, Iemb_SubColeccion<any>, emb_SubColeccion_Meta, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
 
     //================================================================
     //Propiedaes utilitarias
@@ -83,14 +83,16 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
         super.U_afs = this._afs;
 
         //Objeto con metadatos de utilidad para el modelo
-        this.Modelo_Meta = new emb_SubColeccion_Meta();
+        this.Model_Meta = new emb_SubColeccion_Meta();
 
         //establece un limite predefinido para este 
         //service (es personalizable incluso se puede 
         //omitir y dejar el de la clase padre)
         //this.limitePaginaPredefinido = 10;
         //================================================================
-
+        //--solo para TEST-------------------------------
+        this.createDocsTest(false); //Normalmente en false
+        //-----------------------------------------------
     }
     //================================================================================================================================
     /*Consideraciones de lecturas*/
@@ -213,60 +215,47 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
     //================================================================
 
     public get$(
-        doc$:IDoc$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> | null, 
-        RFS: IRunFunSuscribe<emb_SubColeccion>,
+        control$:IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>,
         QValue: Iemb_SubColeccion<IQValue_emb_SubColeccion> | null,
         v_PreGet:Iv_PreGet_emb_SubColeccion | null,
-        path_EmbBase: string | null, //Obligatorio o enviar null
-        limite = this.limitePaginaPredefinido,
-        docInicial: any = null
-    ): IDoc$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
+        path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
+        limit = this.defaultPageLimit,
+        startDoc: any = null
+    ): IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
         
-        //================================================
-        //configurar el pathColeccion solo para subColeccion:
-        //determinar cual de las 2 opciones de query se requiere
-        //si la pathColeccion personalizado (la ideal y se DEBE RECIBIR 
-        //path_EmbBase ) o a traves del pathColeccion estandar de 
-        //la subColeccion entregado por la clase emb_Modelo_Meta (cuando ya se 
-        //tiene establecido la EXENCION para poder usar collectionGroup() 
-        //(si no se tiene la EXENCION se dispara un error por parte 
-        //de angularfire2))
-        const pathColeccion = this.getPathColeccion(path_EmbBase); 
-        const isColeccionGrup = (path_EmbBase && path_EmbBase!=null) ? false : true;
+        //================================================================
+        //configurar QValue por default si se requiere:
+        if (!QValue || QValue == null) {
+            QValue = <Iemb_SubColeccion<IQValue_emb_SubColeccion>>{_id:{_orden:"asc"}};            
+        }
+
+        //configurar tipo de paginacion deseada:
+        const typePaginate:number =  ETypePaginate.Full;
+
         //================================================================
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
-        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, 
-                      QFiltro: IQFiltro<Iemb_SubColeccion<IQValue_emb_SubColeccion>>) => {
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query) => {
 
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             
             //================================================================
             //ordenar, limitar y prepaginar con docInicial
-            cursorQueryRef = cursorQueryRef.orderBy(this.Modelo_Meta._id.nom, QFiltro.QValue._id._orden || "asc") 
-            cursorQueryRef = cursorQueryRef.limit(QFiltro.limite || this.limitePaginaPredefinido);    
-            if (QFiltro.tipoPaginar == EtipoPaginar.Simple || QFiltro.tipoPaginar == EtipoPaginar.Full) {
-                cursorQueryRef = cursorQueryRef.startAfter(QFiltro.docInicial || null);                    
+            cursorQueryRef = cursorQueryRef.orderBy(this.Model_Meta._id.nom, QValue._id._orden || "asc") 
+            cursorQueryRef = cursorQueryRef.limit(limit);    
+            if (typePaginate == ETypePaginate.Single || typePaginate == ETypePaginate.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(startDoc || null);                    
             }           
             //================================================================
-
             return cursorQueryRef;
         };
+       
         //================================================================
-        //Configurar el filtro con las propiedades adicionales como:
-        //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
-        //el orden y demas propiedades
-        const QFiltro:IQFiltro<Iemb_SubColeccion<IQValue_emb_SubColeccion>> = {
-            query : query,
-            docInicial : docInicial,
-            limite: limite,
-            tipoPaginar : EtipoPaginar.Full,
-            QValue : (QValue && QValue != null)? QValue : <Iemb_SubColeccion<IQValue_emb_SubColeccion>>{_id:{_orden:"asc"}},
-            v_PreGet: v_PreGet
-        }        
-        //================================================================
-        return this.leerDocs$(doc$, QFiltro, RFS, this.preGetDocs, pathColeccion, isColeccionGrup);
+        //objeto para parametro:
+        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        return this.readControl$(control$, QFilter, path_EmbBase);
+
     }
 
     /*geId$()*/
@@ -302,58 +291,46 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
     //    
     //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc    
     public getId$(
-        doc$: IDoc$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> | null,
-        RFS: IRunFunSuscribe<emb_SubColeccion>,
+        control$: IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>,
         QValue: Iemb_SubColeccion<IQValue_emb_SubColeccion>,
         v_PreGet:Iv_PreGet_emb_SubColeccion | null,
-        path_EmbBase: string | null, //Obligatorio o enviar null
-    ): IDoc$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
+        path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
+    ): IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
 
-        //================================================
-        //configurar el pathColeccion solo para subColeccion:
-        //determinar cual de las 2 opciones de query se requiere
-        //si la pathColeccion personalizado (la ideal y se DEBE RECIBIR 
-        //path_EmbBase ) o a traves del pathColeccion estandar de 
-        //la subColeccion entregado por la clase emb_Modelo_Meta (cuando ya se 
-        //tiene establecido la EXENCION para poder usar collectionGroup() 
-        //(si no se tiene la EXENCION se dispara un error por parte 
-        //de angularfire2))
-        const pathColeccion = this.getPathColeccion(path_EmbBase); 
-        const isColeccionGrup = (path_EmbBase && path_EmbBase!=null) ? false : true;
+        //================================================================
+        //configurar QValue por default si se requiere:
+        if (!QValue || QValue == null) {
+            QValue = <Iemb_SubColeccion<IQValue_emb_SubColeccion>>{_id:{_orden:"asc"}};            
+        }
+
+        //configurar tipo de paginacion deseada:
+        const typePaginate:number =  ETypePaginate.No;
+
         //================================================================
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
-        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, QFiltro: IQFiltro<Iemb_SubColeccion<IQValue_emb_SubColeccion>>) => {
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query) => {
 
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             //================================================================
             //Query Condiciones:
-            cursorQueryRef = cursorQueryRef.where(this.Modelo_Meta._id.nom, "==", QFiltro.QValue._id.val);            
+            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", QValue._id.val);            
             //================================================================
             //no se requiere paginar       
             return cursorQueryRef;
         };
+     
         //================================================================
-        //Configurar el filtro con las propiedades adicionales como:
-        //el pathColeccion, el tipoPaginar, docInical para la lectura paginada
-        //el orden y demas propiedades
-        const QFiltro:IQFiltro<Iemb_SubColeccion<IQValue_emb_SubColeccion>> = {
-            query : query,
-            docInicial : null,
-            limite: 1,
-            tipoPaginar : EtipoPaginar.No,
-            QValue : (QValue && QValue != null)? QValue : <Iemb_SubColeccion<IQValue_emb_SubColeccion>>{_id:{_orden:"asc"}},
-            v_PreGet:v_PreGet
-        }        
-        //================================================================
-        return this.leerDocs$(doc$, QFiltro, RFS, this.preGetDocs, pathColeccion, isColeccionGrup);
+        //objeto para parametro:
+        const QFilter = {query, QValue, v_PreGet, startDoc:null, limit:0, typePaginate};
+        return this.readControl$(control$, QFilter, path_EmbBase);
     }
 
     //--------------------------------------------------------------------------------------------------------------------------------
 
     //================================================================================================================================
-    /*get_Path_Id$*/
+    /*getBy_pathDoc$()*/
     //permite consultar un solo doc siempre y cuando se tenga el path_id
     //Parametros:
     //doc$:
@@ -372,18 +349,17 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
     //primera vez se recibe un null y eso en casos que no se requiera 
     //inmediatamente obtener dicho doc
     //
-    public get_pathDoc$(
-        pathDoc$: IpathDoc$<emb_SubColeccion>,
-        RFS: IRunFunSuscribe<emb_SubColeccion>,
+    public getBy_pathDoc$(
+        pathControl$: IpathControl$<emb_SubColeccion>,
         v_PreGet:Iv_PreGet_emb_SubColeccion | null,
         _pathDoc: string | null
-    ): IpathDoc$<emb_SubColeccion> {
+    ): IpathControl$<emb_SubColeccion> {
 
-        return this.leer_pathDoc$(pathDoc$, RFS, v_PreGet, this.preGetDocs, _pathDoc);
+        return this.readPathControl$(pathControl$, v_PreGet, this.preGetDocs, _pathDoc);
     }
 
     //================================================================================================================================
-    /*paginar$*/
+    /*paginate$()*/
     //este metodo determina y detecta el tipo de paginacion y solicita el
     //lote de documentos de acuerdo a los parametros
     //Parametros:
@@ -395,24 +371,20 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
     //se debe recibir alguna de las 2 opciones "previo" | "siguiente"
     //Recordar que no todos los tipos de paginacion aceptan "previo"
     //
-    public paginar$(doc$:IDoc$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>, 
-                                direccionPaginacion: "previo" | "siguiente"
-                                ):IDoc$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
+    public paginate$(
+        control$:IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>, 
+        pageDirection: "previousPage" | "nextPage"
+    ):IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
 
-        return this.paginarDocs(doc$, direccionPaginacion);
+        return this.paginteControl$(control$, pageDirection);
     }
-    //================================================================================================================================
-
-    //TEST----------------------------------------------
-    public pruebaIndexCrear = 0;
-    //--------------------------------------------------    
 
     //================================================================================================================================    
-    /*crear*/    
+    /*create*/
     //permite la creacion de un doc en tipo set
     //Parametros:
     //
-    //docNuevo:
+    //newDoc:
     //el doc a crear
     //
     //path_EmbBase:
@@ -422,61 +394,39 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public crear(docNuevo: emb_SubColeccion, path_EmbBase:string, v_PreMod?:Iv_PreMod_emb_SubColeccion): Promise<void> {
+    public create(newDoc: emb_SubColeccion, path_EmbBase:string, v_PreMod?:Iv_PreMod_emb_SubColeccion): Promise<void> {
 
-        //-TEST----------------------------------------------
-        let loteNuevos = <emb_SubColeccion[]>[
-            {
-                _id: "",
-                subCampo1:"c10-1-1",
-                subCampo2:"c10-2-1"
-            },
-            {
-                _id: "",
-                subCampo1:"c10-1-2",
-                subCampo2:"c10-2-2"
-            },
-            {
-                _id: "",
-                subCampo1:"c10-1-3",
-                subCampo2:"c10-2-3"
-            },
-            {
-                _id: "",
-                subCampo1:"c10-1-4",
-                subCampo2:"c10-2-4"
-            },
-        ];
-
-        if (this.pruebaIndexCrear < loteNuevos.length) {
-            docNuevo = loteNuevos[this.pruebaIndexCrear];
-            this.pruebaIndexCrear++;
-        } else {
-            throw "eeee";
-        }
-        //--------------------------------------------------
         //================================================================
         //pre modificacion y formateo del doc
-        docNuevo = this.preModDoc(docNuevo, true, false, v_PreMod, path_EmbBase);
+        newDoc = this.preModDoc(newDoc, true, false, v_PreMod, path_EmbBase);
         //================================================================
-        //realizar y retornar la creacion (se debe enviar el pathColeccion 
-        //generado por el metodo generado):
-        return this.crearDoc(docNuevo, this.getPathColeccion(path_EmbBase));
+        return new Promise<void>((resolve, reject) =>{
+            this.createDocFS(newDoc, this.getPathCollection(path_EmbBase))
+            .then(()=>{
+                //aqui todo lo de despues de la creacion
+
+                resolve();
+            })
+            .catch((err)=>{
+                console.log(err);
+                reject();
+            });
+        });
     }
 
     //================================================================
-    /*actualizar*/
+    /*update*/
     //permite la modificacion de un doc por medio de su _id
     //
     //Parametros:
     //
-    //docEditado:
+    //updatedDoc:
     //el doc a editar
     //
     //path_EmbBase:
     //OBLIGATORIO para las subcolecciones
     //
-    //isEditadoFuerte:
+    //isStrongUpdate:
     //determina si se REEMPLAZAN los campos map_ y mapA_
     //o no se modifican
     //
@@ -484,23 +434,28 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public actualizar(docEditado: emb_SubColeccion, path_EmbBase:string, isEditadoFuerte = false, v_PreMod?:Iv_PreMod_emb_SubColeccion): Promise<void> {
-        //TEST--------------------------------------------
-        docEditado = <emb_SubColeccion>{
-            _id: "1-9c73bc52fc92837d",
-            subCampo1:"alfa",
-            subCampo2:"beta"
-        }
-        //------------------------------------------------
+    public update(updatedDoc: emb_SubColeccion, path_EmbBase:string, isStrongUpdate = false, v_PreMod?:Iv_PreMod_emb_SubColeccion): Promise<void> {
+
         //================================================================
         //pre modificacion y formateo del doc
-        docEditado = this.preModDoc(docEditado, false, isEditadoFuerte, v_PreMod, path_EmbBase);
+        updatedDoc = this.preModDoc(updatedDoc, false, isStrongUpdate, v_PreMod, path_EmbBase);
         //================================================================
-        return this.actualizarDoc(docEditado, this.getPathColeccion(path_EmbBase));
+        return new Promise<void>((resolve, reject) =>{
+            this.updateDocFS(updatedDoc, this.getPathCollection(path_EmbBase))
+            .then(()=>{
+                //aqui todo lo de despues de la actualizacion
+
+                resolve();
+            })
+            .catch((err)=>{
+                console.log(err);
+                reject();
+            });
+        });
 
     }
     //================================================================
-    /*eliminar */
+    /*delete */
     //permite la eliminacion de un doc por medio del _id
     //Parametros:
     //
@@ -510,15 +465,49 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
     //path_EmbBase:
     //OBLIGATORIO para las subcolecciones
     // 
-    public eliminar(_id: string, path_EmbBase:string): Promise<void> {
-        //Test-------------------------------------------
-        _id = "2-a940c69dbf6536cc";
-        //------------------------------------------------
-        //================================================================
-        return this.eliminarDoc(_id, this.getPathColeccion(path_EmbBase));
+    public delete(_id: string, path_EmbBase:string): Promise<void> {
+
+        return new Promise<void>((resolve, reject) =>{
+            this.deleteDocFS(_id, this.getPathCollection(path_EmbBase))
+            .then(()=>{
+                //aqui todo lo de despues de la eliminacion
+
+                resolve();
+            })
+            .catch((err)=>{
+                console.log(err);
+                reject();
+            });
+        });
     }
 
-    
+    //================================================================================================================================
+    /*createControl$()*/
+    public createControl$(
+        RFS:IRunFunSuscribe<emb_SubColeccion>
+    ):IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>{
+        let control$ = this.createPartialControl$(RFS, this.preGetDocs);
+
+        //================================================================
+        //Configurar controls$ extrenos de apoyo para este control$
+        
+        //================================================================
+
+        return control$;
+    }
+    /*createPathControl$()*/
+    public createPathControl$(
+        RFS:IRunFunSuscribe<emb_SubColeccion>
+    ):IpathControl$<emb_SubColeccion>{
+        let control$ = this.createPartialPathControl$(RFS, this.preGetDocs);
+
+        //================================================================
+        //Configurar controls$ extrenos de apoyo para este control$
+        
+        //================================================================
+
+        return control$;
+    }
     //================================================================
     /*preModDoc()*/
     //metodo que debe ejecutarse antes de crear o actualizar un documento
@@ -526,10 +515,10 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
     //doc
     //el documento que se desea crear o actualizar
     //
-    //isCrear:
+    //isCreate:
     //determina si se desea crear o actualizar
     //
-    //isEditadoFuerte:
+    //isStrongUpdate:
     //cuando se edita un documento se determina su los campos especiales como
     // map_  y  mapA_  se deben reemplazar completamente
     //
@@ -542,42 +531,38 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
     //es exclusivo y OBLIGATORIO para subcolecciones, se recibe el pathBase 
     //para poder modificar el documento de la subcoleccion
     //    
-    //_idExterno:
-    //si se requiere asignar un _id especial (No el personalizado) proveido por 
-    //alguna api externa (por ejemplo en el caso de los _id de auth proveeidos 
-    //por la api de registro de google)
+
 
     private preModDoc(
         doc:emb_SubColeccion, 
-        isCrear:boolean=true,
-        isEditadoFuerte=false, 
+        isCreate:boolean=true,
+        isStrongUpdate=false, 
         v_PreMod?:Iv_PreMod_emb_SubColeccion,
         path_EmbBase?:string,
-        _idExterno?:string 
     ):emb_SubColeccion{
 
         //================================================================
         //se determina si se desea crear el documento para su configuracion
-        if (isCrear) {
+        if (isCreate) {
             //================================================================
-            //aqui se genera el nuevo _id a guardar
-            doc._id = this.generarIds();                   
-            //================================================================
-            //aqui se genera el   _pathDoc   del doc a crear, en el caso
-            // de las subColecciones SIEMPRE será requiere de un path_EmbBase
-            //IMPORTANTE: SOLO PARA SUBCOLECCIONES
-            doc._pathDoc = `${this.getPathColeccion(path_EmbBase)}/${doc._id}`;
-            //================================================================
-        }
-        //----------------[EN CONSTRUCCION]----------------
-        if (v_PreMod) {
+            //se determina si se genera un _id personalizado o si el objeto ya
+            //trae consigo un _id de una fuente externa
+            doc._id = (doc._id && typeof doc._id === 'string' && doc._id != "") ?
+                doc._id :
+                this.createIds();          
 
+            //aqui se genera el   _pathDoc   del doc a crear
+            doc._pathDoc = this.create_pathDoc(doc._id, path_EmbBase);
+            //================================================================
         }
-        //------------------------------------------------
+        
+        if (v_PreMod) {
+            //...aqui toda la modificacion y formateo especial previo a guardar
+        }
         //================================================================
         //aqui se formatean los datos del documento (se quitan campos 
         //inecesarios (no almacenables))
-        doc = this.formatearDoc(doc, this.Modelo_Meta, isEditadoFuerte);
+        doc = this.formatearDoc(doc, this.Model_Meta, isStrongUpdate);
         //================================================================                               
         return doc;       
     }
@@ -611,6 +596,14 @@ export class emb_subColeccionService extends Service_Util<emb_SubColeccion, Iemb
         //retornar doc ya customizado y enriquecido
         return doc;
     }
+    //================================================================
+    /*createDocsTest()*/  
+    // permite crear hasta 10 documentos para hacer pruebas
+    private createDocsTest(isActived:boolean=false){
+        if(isActived){
+
+        }
+    }      
 }
 //================================================================================================================================
 

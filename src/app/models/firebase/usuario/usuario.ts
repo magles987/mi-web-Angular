@@ -111,7 +111,7 @@ export class Usuario implements IUsuario<any> {
 
     nombre : string ="";
     apellido : string = "";
-    edad : string = "";
+    edad : number = 0;
 
     fk_rol:string = "";
 

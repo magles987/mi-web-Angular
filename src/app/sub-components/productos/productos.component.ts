@@ -1,7 +1,8 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { FormControl, FormGroup } from "@angular/forms";
+import { from, concat, of, interval, merge, combineLatest, timer } from 'rxjs';
 
-import { IDoc$, IpathDoc$, IRunFunSuscribe } from 'src/app/services/firebase/service_Util';
+import { IControl$, IpathControl$, IRunFunSuscribe, FSModelService } from 'src/app/services/firebase/fs_Model_Service';
 
 import { AuthService, ETipoAuth } from 'src/app/services/firebase/auth/auth.service';
 import { AuthNoSocial,  } from 'src/app/models/firebase/auth/authNoSocial';
@@ -14,6 +15,8 @@ import { emb_subColeccionService, IQValue_emb_SubColeccion } from 'src/app/servi
 
 import { Rol } from 'src/app/models/firebase/rol/rol';
 import { RolService } from 'src/app/services/firebase/rol/rol.service';
+import { concatAll, mergeAll } from 'rxjs/operators';
+
 
 
 @Component({
@@ -27,10 +30,10 @@ export class ProductosComponent implements OnInit, OnDestroy {
   //contenedor de documento para trabajo en plantilla
   public Producto:Producto; 
 
-  public ProductoCtrl$:IDoc$<Producto, IProducto<IQValue_Producto>>;
+  public Producto$:IControl$<Producto, IProducto<IQValue_Producto>>;
   //public Producto_pathDocCtrl$:IpathDoc$<Producto>;
 
-  public Emb_SubColeccionCtrl$:IDoc$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>;
+  public emb_SubColeccion$:IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>;
 
   //array de documentos obtenidos de la bd
   //de acuerdo a los filtros aplicados
@@ -58,31 +61,56 @@ export class ProductosComponent implements OnInit, OnDestroy {
     this.listProductos = []; 
     //================================================
     //inicializacion de controls
-    this.ProductoCtrl$ = null;
-    //this.Producto_pathDocCtrl$ = null;
-    this.Emb_SubColeccionCtrl$ = null;
+    this.Producto$ = this._ProductoService.createControl$(this.RFS_Productos);
+    //this.Producto_pathDocCtrl$ = this._ProductoService.createPathControl$(this.RFS_Productos_pathDoc);
+    this.emb_SubColeccion$ = this._emb_SubColeccionService.createControl$(this.RFS_Emb_SubColeccion);
 
     //================================================
     //inicializacion de primeras consultas (opcional):
 
-    this.ProductoCtrl$ = this._ProductoService.get$(this.ProductoCtrl$, this.RFS_Productos, null, this.getDatosPreGet());
+    this._ProductoService.ready()
+    .then(()=>{
 
-    //this.Producto_pathDocCtrl$ = this._ProductoService.getProducto_pathDoc$(this.Producto_pathDocCtrl$, this.RFS_Productos_pathDoc, null);
+      //this.Producto$ = this._ProductoService.get$(this.Producto$, null, this.getDatosPreGet());
+      //this.Producto_pathDocCtrl$ = this._ProductoService.getProducto_pathDoc$(this.Producto_pathDocCtrl$, this.RFS_Productos_pathDoc, null);
+    
+      //TEST--------------------------------------------------------------------------
 
-    //TEST--------------------------------------------------------------------------
+      // const _pathBase1 = "Productos/16f1ec3ddfd-81de43de6700c3c7";
+      // this.emb_SubColeccion$ = this._emb_SubColeccionService.get$(this.emb_SubColeccion$, null, null, _pathBase1);
+      // const obsP = this.Producto$.obsMergeAll;
+      // const obsE = this.emb_SubColeccion$.obsMergeAll;
+      // const obsT = timer(30000);
+      // combineLatest([obsP, obsE, obsT])
+      // .subscribe((d)=>{  
+      //   console.log("SE HIZO TODO");
+      // });
+  
+      // obsP.subscribe(()=>{
+      //   console.log("SE HIZO Producto")
+      // });
+      // obsE.subscribe(()=>{
+      //   console.log("SE HIZO subColeccion")
+      // });
+  
+      //TEST--------------------------------------------------------------------------    
+      // let _pathDocs = ["Productos/000001-bb137223430a5d9f", 
+      //                 "/Productos/000002-a76299ccf1d7ce9b",
+      //                 "/Productos/000003-ab3e840a0dff7f5d",
+      //                 "/Productos/000004-9a434806011343ce",
+      //                 "/Productos/000005-8d5b017aa032ebc3",
+      //                 "/Productos/000006-ba0f544bb2e38778"
+      //                 ]
+      // let _pathDocs = "Productos/000001-bb137223430a5d9f";
+      // let control$ = this._ProductoService.populate(null, this.RFS_poblar, _pathDocs,4);
+      // setTimeout(()=>{
+      //   this._ProductoService.populate(control$, this.RFS_poblar);
+      // }, 10000);
+    })
+    .catch((err)=>{
+      console.log(err);
+    });
 
-    // let _pathDocs = ["Productos/000001-bb137223430a5d9f", 
-    //                 "/Productos/000002-a76299ccf1d7ce9b",
-    //                 "/Productos/000003-ab3e840a0dff7f5d",
-    //                 "/Productos/000004-9a434806011343ce",
-    //                 "/Productos/000005-8d5b017aa032ebc3",
-    //                 "/Productos/000006-ba0f544bb2e38778"
-    //                 ]
-    // let _pathDocs = "Productos/000001-bb137223430a5d9f";
-    // let control$ = this._ProductoService.populate(null, this.RFS_poblar, _pathDocs,4);
-    // setTimeout(()=>{
-    //   this._ProductoService.populate(control$, this.RFS_poblar);
-    // }, 10000);
     //================================================
 
   }
@@ -107,9 +135,16 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(){
     //================================================
-    //desuscribirse de todos los observables
-    this._ProductoService.unsubscribeAll$([this.ProductoCtrl$], []);
-    this._emb_SubColeccionService.unsubscribeAll$([this.Emb_SubColeccionCtrl$],[]);
+    //desuscribirse de todos los observables que 
+    //use este componente 
+    FSModelService.unsubscribeControl$([
+      this.Producto$,
+      this.emb_SubColeccion$
+    ]);
+
+    FSModelService.unsubscribePathControl$([
+      //..aqui todos los pathControl$
+    ]);    
     //================================================
   }
 
@@ -163,17 +198,6 @@ export class ProductosComponent implements OnInit, OnDestroy {
     return valQuery;
   } 
 
-  private getFiltroProductosId():IProducto<IQValue_Producto>{
-    let valQuery:IProducto<IQValue_Producto> = {
-      _id:{
-        val:"000003-ab3e840a0dff7f5d",
-        _orden:"asc"
-      }
-
-    };
-    return valQuery;
-  } 
-
   //================================================================
   //propiedades metodos de ejecucion next y error para las suscripciones
   //dentro de cada una se ejecuta el codigo una vez leido los docs
@@ -223,12 +247,12 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   public paginarAnterior(){
 
-    this.ProductoCtrl$ = this._ProductoService.paginar$(this.ProductoCtrl$, "previo");
+    this.Producto$ = this._ProductoService.paginate$(this.Producto$, "previousPage");
   }
 
   public paginarSiguiente(){
 
-    this.ProductoCtrl$ = this._ProductoService.paginar$(this.ProductoCtrl$, "siguiente");
+    this.Producto$ = this._ProductoService.paginate$(this.Producto$, "nextPage");
   }
 
   //================================================================
@@ -236,38 +260,48 @@ export class ProductosComponent implements OnInit, OnDestroy {
   //ES MEJOR USAR METODOS INDEPENDIENTES ESTO ES SOLO PRUEBA
 
   public consultarProducto(opc: "Todo"|"_id"|"Nombre"|"Precio"|"Ruedas"|"ArrayNormal"|"SubCol"|"SubColGrup"){
-    switch (opc) {
-      case "Todo":
-        this.ProductoCtrl$ = this._ProductoService.get$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosTodo(), this.getDatosPreGet());
-        break;
-      case "_id":
-        this.ProductoCtrl$ = this._ProductoService.getId$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosId(), this.getDatosPreGet());
-        break;        
-      case "Nombre":
-        this.ProductoCtrl$ = this._ProductoService.getPorNombre$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorNombre(), this.getDatosPreGet());
-        break;  
-      case "Precio":
-        this.ProductoCtrl$ = this._ProductoService.getPorPrecio$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorPrecio(), this.getDatosPreGet());
-        break;
-      case "Ruedas":
-        this.ProductoCtrl$ = this._ProductoService.getPorMiscRuedas$(this.ProductoCtrl$, this.RFS_Productos, this.getFiltroProductosPorRuedas(), this.getDatosPreGet());
-        break;  
+    Promise.all([
+      this._ProductoService.ready(),
+      this._emb_SubColeccionService.ready() 
+    ])
+    .then(()=>{
+      switch (opc) {
+        case "Todo":
+          this.Producto$ = this._ProductoService.get$(this.Producto$, this.getFiltroProductosTodo(), this.getDatosPreGet());
+          break;
+        case "_id":
+          this.Producto$ = this._ProductoService.getId$(this.Producto$, "IDxxxxxxxxxxxxx", this.getDatosPreGet());
+          break;        
+        case "Nombre":
+          this.Producto$ = this._ProductoService.getPorNombre$(this.Producto$, this.getFiltroProductosPorNombre(), this.getDatosPreGet());
+          break;  
+        case "Precio":
+          this.Producto$ = this._ProductoService.getPorPrecio$(this.Producto$, this.getFiltroProductosPorPrecio(), this.getDatosPreGet());
+          break;
+        case "Ruedas":
+          this.Producto$ = this._ProductoService.getPorMiscRuedas$(this.Producto$, this.getFiltroProductosPorRuedas(), this.getDatosPreGet());
+          break;  
+  
+        case "ArrayNormal":
+          this.Producto$ = this._ProductoService.getPorArrayNormal$(this.Producto$, null, this.getDatosPreGet());    
+          break;
+        case "SubCol":
+          let path_embBaseNormal = this.listProductos[0]._pathDoc; //opcion basica
+          this.emb_SubColeccion$ = this._emb_SubColeccionService.get$(this.emb_SubColeccion$, null, null, path_embBaseNormal );    
+          break;           
+        case "SubColGrup":
+          let path_embBaseGrup = null;
+          this.emb_SubColeccion$ = this._emb_SubColeccionService.get$(this.emb_SubColeccion$, null, null, path_embBaseGrup );    
+          break;        
+      
+        default:
+          break;
+      }
+    })
+    .catch((err)=>{
+      console.log(err)
+    });
 
-      case "ArrayNormal":
-        this.ProductoCtrl$ = this._ProductoService.getPorArrayNormal$(this.ProductoCtrl$, this.RFS_Productos, null, this.getDatosPreGet());    
-        break;
-      case "SubCol":
-        let path_embBaseNormal = this.listProductos[0]._pathDoc; //opcion basica
-        this.Emb_SubColeccionCtrl$ = this._emb_SubColeccionService.get$(this.Emb_SubColeccionCtrl$, this.RFS_Emb_SubColeccion, null, this.getDatosPreGet(), path_embBaseNormal );    
-        break;           
-      case "SubColGrup":
-        let path_embBaseGrup = null;
-        this.Emb_SubColeccionCtrl$ = this._emb_SubColeccionService.get$(this.Emb_SubColeccionCtrl$, this.RFS_Emb_SubColeccion, null, this.getDatosPreGet(), path_embBaseGrup );    
-        break;        
-    
-      default:
-        break;
-    }
   }
   //================================================================================================================================
   //================================================================================================================================
@@ -283,7 +317,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   singUpEmail(){
     const credencial = <AuthNoSocial>{
-      email: "carlos@carlos.com",
+      email: "magles@magles.com",
       pass : "123456"
     }
     
@@ -329,7 +363,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
     //determinar si es actualizar o crear (dependiendo 
     //si se recibe docAnterior)
     if (docAnterior) {
-      this._ProductoService.actualizar(doc)
+      this._ProductoService.update(doc)
       .then((docActualizado)=>{
         console.log("987Actualizado: " + docActualizado);
         this.formCrearOActualizar.reset();
@@ -338,7 +372,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
         console.log("987 Error al Actualizalo: " + error);
       });           
     } else {
-      this._ProductoService.crear(doc)
+      this._ProductoService.create(doc)
       .then((docCreado)=>{
         console.log("987Creado: " + docCreado);
         this.formCrearOActualizar.reset();
@@ -357,7 +391,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
   crear_set(opc: "Col"|"subCol"){
     switch (opc) {
       case "Col":
-        this._ProductoService.crear(<Producto>{}) //<Producto>{}solo para ejemplo
+        this._ProductoService.create(<Producto>{}) //<Producto>{}solo para ejemplo
         .then(()=>{
           console.log("ya en el componente: ");
         })
@@ -368,7 +402,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
       case "subCol":
         const path_embBase = "Productos/16f1ec3ddfd-81de43de6700c3c7";
-        this._emb_SubColeccionService.crear(<emb_SubColeccion>{}, path_embBase) //emb_SubColeccion>{}solo para ejemplo
+        this._emb_SubColeccionService.create(<emb_SubColeccion>{}, path_embBase) //emb_SubColeccion>{}solo para ejemplo
         .then(()=>{
           console.log("ya en el componente: ");
         })
@@ -384,7 +418,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
   }
 
   editar(){
-    this._ProductoService.actualizar(<Producto>{})//<Producto>{}solo para ejemplo
+    this._ProductoService.update(<Producto>{})//<Producto>{}solo para ejemplo
     .then(()=>{
       console.log("EDITADO ya en el componente: ");
     })

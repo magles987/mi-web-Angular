@@ -15,58 +15,64 @@ import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
 
 export class Rol_Meta  implements IRol<any>, IMetaColeccion {
 
-    __nomColeccion: string;
-    __nomPathColeccion: string;
-    __isEmbSubcoleccion: boolean;
+    //================================================================
+    /*metadata estatica:*/
+    //metadata referente a coleccion
+    __nomColeccion: string = nomsColecciones.Roles;
+    __nomPathColeccion: string = "";
+    __isEmbSubcoleccion: boolean = false;
 
-    _id:IMetaCampo<string, any>;
-    _pathDoc:IMetaCampo<string, any>;
-    codigo:IMetaCampo<number, any>;
-    strCodigo:IMetaCampo<string, any>;
+    //metadata referente a campos:
 
-    emb_Permisos: IMetaCampo<any, any>;
+    _id:IMetaCampo<string, any> = {
+        nom:"_id",
+        default:"",
+    };
+    _pathDoc:IMetaCampo<string, any> = {
+        nom:"_pathDoc",
+        default:"",
+    };
+    
+    //codigo de Roles Pre configurados:
+    //invitado = 10**1
+    //empleado = 10**2
+    //administrador = 10**3
+    //programador = 10**8
+    codigo:IMetaCampo<number, any> = {
+        nom : "codigo",
+        //este valor default es el exponente 
+        //se le asigna la potencia en el constructor 
+        default:1, 
+        isRequerido:true,
+        maxFactorIgualdadQuery:1,
+        expFactorRedondeo:null,
+    };
+    strCodigo:IMetaCampo<string, any> = {
+        nom:"strCodigo",
+        default:"invitado"
+    };
 
+    emb_Permisos: IMetaCampo<any, any>= {
+        nom:"emb_Permisos",
+        default : undefined,
+        isEmbebido : true,
+    };
+
+    //metadata utilitaria todas dentro de __Util:
+    __Util = {
+        //contiene la base para potencia
+        //de los codigos de rol
+        baseCodigo : 10,
+    };
+    //================================================================
+    /*metadata dinamica:*/
+    //son propiedades-funcion RFS que se le asignaran a los respectivos controls$
+    //para cargar y monitorear dinamicamente la metadata
+
+    //================================================================
     constructor() {
-
-        //metadata referente a coleccion
-        this.__nomColeccion = nomsColecciones.Roles;
-        this.__nomPathColeccion = "";
-        this.__isEmbSubcoleccion = false;
-
-        //metadata referente a campos:        
-        this._id = {
-            nom:"_id",
-            default:"",
-        };
-        this._pathDoc = {
-            nom:"_pathDoc",
-            default:"",
-        };
-
-        //codigo de Roles Pre configurados:
-        //invitado = 10^1
-        //empleado = 10^2
-        //administrador = 10^6
-        //programador = 10^8
-        this.strCodigo = {
-            nom:"strCodigo",
-            default:"invitado"
-        }
-
-        this.codigo = {
-            nom : "codigo",
-            default:10^1,
-            isRequerido:true,
-            maxFactorIgualdadQuery:1,
-            expFactorRedondeo:null,
-        };
-
-        this.emb_Permisos = {
-            nom:"emb_Permisos",
-            default : undefined,
-            isEmbebido : true,
-        }
-
+        //potencia para codigo de rol por default
+        this.codigo.default = this.codigo.default ** this.__Util.baseCodigo;
     }
  
 }

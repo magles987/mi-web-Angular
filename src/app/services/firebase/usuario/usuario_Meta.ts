@@ -1,6 +1,11 @@
 import { IUsuario, Usuario } from '../../../models/firebase/usuario/usuario';
 import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
 
+import { IRunFunSuscribe } from '../fs_Model_Service';
+
+import { Rol } from 'src/app/models/firebase/rol/rol';
+import { Rol_Meta } from '../rol/rol_Meta';
+
 //================================================================
 /*{Modelo}_Meta*/
 //las clases _Meta que implementa la interfaz IModelo proporcionan
@@ -13,62 +18,81 @@ import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
 //
 //IMPORTANTE: en esta clase si se deberia agregar metodos y demas funcionalidades
 
-export class UsuarioCtrl_Util implements IUsuario<any>, IMetaColeccion {
-    __nomColeccion: string;
-    __nomPathColeccion: string;
-    __isEmbSubcoleccion: boolean;
+export class Usuario_Meta implements IUsuario<any>, IMetaColeccion {
 
-    _id:IMetaCampo<string, any>;
-    _pathDoc:IMetaCampo<string, any>;
-    nombre:IMetaCampo<string, any>;
-    apellido:IMetaCampo<string, any>;
-    edad:IMetaCampo<string, any>;
-    fk_rol:IMetaCampo<string, any>;
+    //================================================================
+    /*metadata estatica:*/
+    //metadata referente a coleccion
+    __nomColeccion: string = nomsColecciones.Usuarios;
+    __nomPathColeccion: string = "";
+    __isEmbSubcoleccion: boolean = false;
 
-    constructor() {
+    //metadata referente a campos:
+    _id: IMetaCampo<string, any> = {
+        nom: "_id",
+        default: "",
+    };
+    _pathDoc: IMetaCampo<string, any> = {
+        nom: "_pathDoc",
+        default: "",
+    };
+    nombre: IMetaCampo<string, any> = {
+        nom: "nombre",
+        default: "",
+        isRequerido: true,
+    };
+    apellido: IMetaCampo<string, any> = {
+        nom: "apellido",
+        default: "",
+        isRequerido: true,
+    };
+    edad: IMetaCampo<string, any> = {
+        nom: "edad",
+        default: "",
+        isRequerido: true
+    };
+    fk_rol: IMetaCampo<string, any> = {
+        nom: "fk_rol",
+        default: "",
+        isRequerido: true,
+        typeSelect: "unica",
+        selectList: []
+    };
 
-        //metadata referente a coleccion
-        this.__nomColeccion = nomsColecciones.Usuarios;
-        this.__nomPathColeccion = "";
-        this.__isEmbSubcoleccion = false;
+    //metadata utilitaria todas dentro de __Util:
+    __Util = {
+        codigoRolActual:0
+    };
 
-        //metadata referente a campos:
-        this._id = {
-            nom:"_id",
-            default:"",
-        };
-        this._pathDoc = {
-            nom:"_pathDoc",
-            default:"",
-        };
-    
-        this.nombre = {
-            nom : "nombre",
-            default:"",
-            isRequerido:true,
-        };
-        this.apellido = {
-            nom:"apellido",
-            default:"",
-            isRequerido:true,
-        };
-    
-        this.edad = {
-            nom:"edad",
-            default:"",
-            isRequerido:true
-        }
-    
-        this.fk_rol = {
-            nom:"fk_rol",
-            default:"",
-            isRequerido:true,
-            // typeSelect:"unica",
-            // selectList:
-        }
+    //================================================================
+    /*metadata dinamica:*/
+    //son propiedades-funcion RFS que se le asignaran a los respectivos 
+    //controls_ext$ para cargar y monitorear dinamicamente la metadata
+    RFS_rol:IRunFunSuscribe<Rol> = {
+        next:(roles:Rol[])=>{
 
+            this.fk_rol.selectList = [];
+            
+            const rol_m = new Rol_Meta();
+
+            roles.forEach(element => {
+                this.fk_rol.selectList.push(element._pathDoc);
+                if (element.codigo <= rol_m.__Util.baseCodigo) {
+                    this.fk_rol.default = element._pathDoc;
+                }
+            });
+
+            this.__Util.codigoRolActual = roles[roles.length-1].codigo;
+        },
+        error:(err)=>{}
     }
 
+    //================================================================
+    constructor() {
+
+    }
+   
+    //================================================================
 }
 //================================================================================================================================
 /*Clases _Meta para campo especiales (map_ y mapA_)*/
