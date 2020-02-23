@@ -201,13 +201,13 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     //solo es necesario recibirlo si por alguna razon se quiere paginar 
     //No teniendo como base los snapshotsDocs sino otra cosa
     public get$(
-        control$:IControl$<Rol, IRol<IQValue_Rol>>, 
+        control$:IControl$<Rol>, 
         QValue: IRol<IQValue_Rol> | null,
         v_PreGet:Iv_PreGet_Rol = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit = this.defaultPageLimit,
         startDoc: any = null,
-    ): IControl$<Rol, IRol<IQValue_Rol>> {
+    ): IControl$<Rol> {
 
         //================================================================
         //configurar QValue por default si se requiere:
@@ -239,7 +239,7 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
         };
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }
@@ -253,34 +253,29 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     //cuente con el path_id, para ese caso es mejor este metodo
     //
     //Parametros:
-    //doc$:
-    //objeto control$ con toda la informacion de la lectura reactiva (aunque 
-    //puede recibirse  null  si es la primera vez)
+    //control$:
+    //objeto  con toda la informacion de la lectura reactiva
     //
-    //RFS:
-    //objeto con las funciones next() y error() para ejecutar una vez este suscrito
-    //
-    //QValue:
-    //recibe un objeto creado a partir de la interfaz IModelo<IQValue_Modelo>
-    //que a su vez contiene los valores necesarios para construir la query
-    //(valores como:  buscar, rangos, iniciales, entre otros)
+    //_id:
+    //el id del documento, este _id puede ser de una fuente externa
     //
     //v_PreGet:
     //contiene el objeto con valores para customizar y enriquecer los 
     //docs obtenidos de la bd y antes de entregarlos a la suscripcion
     //
+    //path_EmbBase:
+    //es opcional para colecciones, es Obligatorios para subcolecciones 
+    //y que NO se desee consulta en collectionGroup
+    //
     //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc
     public getId$(
-        control$:IControl$<Rol, IRol<IQValue_Rol>> | null, 
+        control$:IControl$<Rol> | null, 
         _id:string,
         v_PreGet:Iv_PreGet_Rol = null,
-        path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup        
-    ): IControl$<Rol, IRol<IQValue_Rol>> {
+        path_EmbBase:string = null,       
+    ): IControl$<Rol> {
 
         //================================================================
-        //configurar QValue por default si se requiere:
-        const QValue = <IRol<IQValue_Rol>>{_id:{_orden:"asc", val:_id}};   
-
         //configurar tipo de paginacion deseada:
         const typePaginate:number =  ETypePaginate.No;
   
@@ -293,7 +288,7 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             //================================================================
             //Query Condiciones:
-            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", QValue._id.val);            
+            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", _id);            
             //================================================================
             //no se requiere paginar            
             return cursorQueryRef;
@@ -301,18 +296,18 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc:null, limit:0, typePaginate};
+        const QFilter:IQFilter = {query,v_PreGet, startDoc:null, limit:0, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
     }
 
     public getPorCodigo$(
-        control$:IControl$<Rol, IRol<IQValue_Rol>> | null, 
+        control$:IControl$<Rol> | null, 
         QValue: IRol<IQValue_Rol> | null,
         v_PreGet:Iv_PreGet_Rol = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit = this.defaultPageLimit,
         startDoc: any = null,
-    ): IControl$<Rol, IRol<IQValue_Rol>> {
+    ): IControl$<Rol> {
 
         //================================================================
         //configurar QValue por default si se requiere:
@@ -348,17 +343,17 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
 
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }
 
     public getByCodigoForUsuario$(
-        control$:IControl$<Rol, IRol<IQValue_Rol>> | null, 
+        control$:IControl$<Rol> | null, 
         maxCodigo: number,
         v_PreGet:Iv_PreGet_Rol = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
-    ): IControl$<Rol, IRol<IQValue_Rol>> {
+    ): IControl$<Rol> {
 
         //================================================================
         //configurar QValue por default:
@@ -392,7 +387,7 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
 
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc:null, limit:this.defaultPageLimit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc:null, limit:this.defaultPageLimit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }
@@ -440,9 +435,9 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     //Recordar que no todos los tipos de paginacion aceptan "previo"
     //
     public paginate$(
-        control$:IControl$<Rol, IRol<IQValue_Rol>>, 
+        control$:IControl$<Rol>, 
         pageDirection: "previousPage" | "nextPage"
-    ):IControl$<Rol, IRol<IQValue_Rol>> {
+    ):IControl$<Rol> {
 
         return this.paginteControl$(control$, pageDirection);
     }
@@ -543,7 +538,7 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     /*createControl$()*/
     public createControl$(
         RFS:IRunFunSuscribe<Rol>
-    ):IControl$<Rol, IRol<IQValue_Rol>>{
+    ):IControl$<Rol>{
         let control$ = this.createPartialControl$(RFS, this.preGetDocs);
 
         //================================================================

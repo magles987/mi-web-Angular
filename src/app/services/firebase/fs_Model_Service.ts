@@ -70,7 +70,7 @@ export enum ETypePaginate {
 //Recordar: IQValue_Model  tipado especial enfocado a los valores
 //necesarios para construir la query
 
-export interface IQFilter<TIModel_IQValue> {
+export interface IQFilter {
 
     //OBLIGATORIA, contiene la funcion query que se ejecutara para
     //solicitar los docs a firestore de acuerdo a la construccion
@@ -91,12 +91,6 @@ export interface IQFilter<TIModel_IQValue> {
     //tipos de paginacion (estandar o full))
     startDoc:any;
 
-    //contiene un objeto TIModelo<IvalQ_Modelo> que almacena propiedades
-    //con valores para construiri la query, entre los mas destacados
-    //esta   _orden que indica el orden de docs,  val que contiene el
-    //valor exacto a buscar, ini valor inicial a buscar, entre otros
-    QValue:TIModel_IQValue | null;
-
     //contiene el objeto con valores para customizar y enriquecer los 
     //docs obtenidos de la bd y antes de entregarlos a la suscripcion
     v_PreGet:unknown;
@@ -113,9 +107,9 @@ export interface IQFilter<TIModel_IQValue> {
 //IMPORTANTE: recibe un tipado con sintaxis: TIModel<IQValue_Model>
 //Recordar: IQValue_Model  tipado especial enfocado a los valores
 //necesarios para construir la query
-export interface IControl$<TModel, TIModel_IQValue> {
+export interface IControl$<TModel> {
     //objetos para rastreo y monitoreo de las querys:
-    behaviors: BehaviorSubject<IQFilter<TIModel_IQValue>>[];
+    behaviors: BehaviorSubject<IQFilter>[];
     observables: Observable<TModel[]>[];
     //un solo observable puede tener muchas suscripciones
     //por lo tanto esta propiedad es un array bidimensional
@@ -153,7 +147,7 @@ export interface IControl$<TModel, TIModel_IQValue> {
 
     //contiene toda la informacion especifica para
     //construir la query
-    QFilter:IQFilter<TIModel_IQValue>;
+    QFilter:IQFilter;
 
     //las funciones next(), error() (y complete()
     //opcional) que se ejecutan una suscrito al
@@ -258,7 +252,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
 
     //contenedor de objetos control$ de services foraneos
     //a este service 
-    protected f_Controls$:IControl$<unknown, unknown>[];
+    protected f_Controls$:IControl$<unknown>[];
     protected f_pathControls$:IpathControl$<unknown>[];
 
     //almacena un limite de docs leidos estandar para TODAS LAS QUERYS,
@@ -269,7 +263,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //Control$ generico asignado para este servicio (se usa en servicios donde
     //no se requiera crear diferentes controls$ para monitorear lecturas, 
     //solo con este generico bastaria) 
-    public g_Control$:IControl$<TModel, TIModel_IQValue>;
+    public g_Control$:IControl$<TModel>;
     public g_pathControl$:IpathControl$<TModel>;
 
     //================================================================
@@ -368,10 +362,10 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     protected createPartialControl$(
         RFS:IRunFunSuscribe<TModel>, 
         preGetDoc:(doc:TModel, v_PreGet:any)=>TModel
-    ):IControl$<TModel, TIModel_IQValue>{    
+    ):IControl$<TModel>{    
 
         //preinstanciar el control$a devolver
-        let control$ = <IControl$<TModel, TIModel_IQValue>>{
+        let control$ = <IControl$<TModel>>{
             behaviors:[],
             observables:[],
             subscriptions:[],
@@ -386,7 +380,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
         //un behavior inicial sin Qfilter ( null )  para que no haga la consulta 
         //inicial, los monitoreadores behaviors y observables se inicializan 
         //con el primer elemento del primero del array contenedor
-        control$.behaviors[0] = new BehaviorSubject<IQFilter<TIModel_IQValue>>(null);
+        control$.behaviors[0] = new BehaviorSubject<IQFilter>(null);
         control$.observables[0] = this.getObsQueryControl(control$, 0);
 
         //recordando que subscriptions es un contenedor bidimensional por lo tanto se hace
@@ -467,10 +461,10 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //solo util para emb_subColecciones y se debe recibir si se desea consultar sin collection group
 
     protected readControl$(
-        control$:IControl$<TModel, TIModel_IQValue>,
-        QFilter:IQFilter<TIModel_IQValue>,
+        control$:IControl$<TModel>,
+        QFilter:IQFilter,
         path_EmbBase:string=null
-    ):IControl$<TModel, TIModel_IQValue>{
+    ):IControl$<TModel>{
 
         //================================================================
         //reiniciar todas las propiedades del control$ necesarias para 
@@ -579,7 +573,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //Especifica el index del behaior al cual se le creará un observable
     //(es indispensable cunado se usa paginacion full, en las demas siempre es 0)
     private getObsQueryControl(
-        control$:IControl$<TModel, TIModel_IQValue>, 
+        control$:IControl$<TModel>, 
         idxBehavior:number
     ): Observable<TModel[]> {
         //el pipe y el switchMap cambiar el observable dinamicamente cada vez que se
@@ -920,9 +914,9 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //direccionPaginacion:
     //un string con 2 opciones "previo" | "siguiente", algunos tipos de paginacion solo soportan "siguiente"
     protected paginteControl$(
-        control$:IControl$<TModel, TIModel_IQValue>,
+        control$:IControl$<TModel>,
         pageDirection: "previousPage" | "nextPage"
-    ):IControl$<TModel, TIModel_IQValue>{
+    ):IControl$<TModel>{
 
         //para paginar basta con tener el filtro del
         //ultimo behavior activo )
@@ -993,7 +987,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
 
                             QFiltro.startDoc = control$.snapshotStartDocs[control$.currentPageNum + 1];
                             control$.currentPageNum++;
-                            control$.behaviors.push(new BehaviorSubject<IQFilter<TIModel_IQValue>>(QFiltro));
+                            control$.behaviors.push(new BehaviorSubject<IQFilter>(QFiltro));
                             control$.observables.push(this.getObsQueryControl(control$, control$.behaviors.length - 1));
                             
                             //--------[EN CONSTRUCCION]--------
@@ -1141,7 +1135,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //estos metodos estaticos y reciben controls$ tipo unknown
     //para permitir desuscribir varios control$ agrupados en array 
     //de diferentes servicios
-    public static unsubscribeControl$(controls$:IControl$<unknown, unknown>[]):void {
+    public static unsubscribeControl$(controls$:IControl$<unknown>[]):void {
                 
         if (controls$.length == 0) {
             return; //si docs$ esta vacio no ejecutar nada   
@@ -1201,7 +1195,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //si se desea conservar estos controls$ vitales para el funcionamiento del servicio
     //es mejor usar los metodos de desuscripcion detallados como:
     //   unsubscribeControls$(), unsubscribePathControls$() y demas... 
-    public unsubscribeAll$(controls$:IControl$<unknown, unknown>[], pathControls$:IpathControl$<unknown>[]):void {
+    public unsubscribeAll$(controls$:IControl$<unknown>[], pathControls$:IpathControl$<unknown>[]):void {
         
         //================================================
         //determinar si se envio un array de controls$        
@@ -1240,9 +1234,9 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //permite adicionar una funcion RFS (o mas llamandolo varias veces)
     //al control$ y subscribirlas inmediatamente (ideal para el g_control$ )
     public addRFStoControl$(
-        control$:IControl$<TModel, TIModel_IQValue>,
+        control$:IControl$<TModel>,
         RFS:IRunFunSuscribe<TModel>
-    ):IControl$<TModel, TIModel_IQValue>{
+    ):IControl$<TModel>{
         
         //se agrega como referencia al control$
         control$.RFSs.push(RFS);

@@ -47,10 +47,10 @@ export class AuthService {
 
     //contenedor de objetos control$ de services externos
     //a este service 
-    private Controls_ext$: IControl$<unknown, unknown>[] = [];
+    private Controls_ext$: IControl$<unknown>[] = [];
     private pathControls_ext$: IpathControl$<unknown>[] = [];
 
-    private Usuario$: IControl$<Usuario, IUsuario<IQValue_Usuario>>;
+    private Usuario$: IControl$<Usuario>;
 
     constructor(
         private afAuth: AngularFireAuth,

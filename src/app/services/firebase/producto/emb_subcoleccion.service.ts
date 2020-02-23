@@ -215,13 +215,13 @@ export class emb_subColeccionService extends FSModelService<emb_SubColeccion, Ie
     //================================================================
 
     public get$(
-        control$:IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>,
+        control$:IControl$<emb_SubColeccion>,
         QValue: Iemb_SubColeccion<IQValue_emb_SubColeccion> | null,
         v_PreGet:Iv_PreGet_emb_SubColeccion | null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit = this.defaultPageLimit,
         startDoc: any = null
-    ): IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
+    ): IControl$<emb_SubColeccion> {
         
         //================================================================
         //configurar QValue por default si se requiere:
@@ -253,7 +253,7 @@ export class emb_subColeccionService extends FSModelService<emb_SubColeccion, Ie
        
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }
@@ -267,42 +267,29 @@ export class emb_subColeccionService extends FSModelService<emb_SubColeccion, Ie
     //cuente con el path_id, para ese caso es mejor este metodo
     //
     //Parametros:
-    //doc$:
-    //objeto control$ con toda la informacion de la lectura reactiva (aunque 
-    //puede recibirse  null  si es la primera vez)
+    //control$:
+    //objeto  con toda la informacion de la lectura reactiva
     //
-    //RFS:
-    //objeto con las funciones next() y error() para ejecutar una vez este suscrito
-    //
-    //QValue:
-    //recibe un objeto creado a partir de la interfaz IModelo<IQValue_Modelo>
-    //que a su vez contiene los valores necesarios para construir la query
-    //(valores como:  buscar, rangos, iniciales, entre otros)
+    //_id:
+    //el id del documento, este _id puede ser de una fuente externa
     //
     //v_PreGet:
     //contiene el objeto con valores para customizar y enriquecer los 
     //docs obtenidos de la bd y antes de entregarlos a la suscripcion
     //
     //path_EmbBase:
-    //se debe recibir para determinar que tipo de query se procesara
-    //si se envia el path personalizado se entenderá que es query de 
-    //subColeccion basica pero si se recibe null se entendera que es
-    //query de tipo colletcionGroup()
-    //    
-    //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc    
+    //es opcional para colecciones, es Obligatorios para subcolecciones 
+    //y que NO se desee consulta en collectionGroup
+    //
+    //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc
     public getId$(
-        control$: IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>,
-        QValue: Iemb_SubColeccion<IQValue_emb_SubColeccion>,
+        control$: IControl$<emb_SubColeccion>,
+        _id:string,
         v_PreGet:Iv_PreGet_emb_SubColeccion | null,
-        path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
-    ): IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
+        path_EmbBase:string = null,
+    ): IControl$<emb_SubColeccion> {
 
         //================================================================
-        //configurar QValue por default si se requiere:
-        if (!QValue || QValue == null) {
-            QValue = <Iemb_SubColeccion<IQValue_emb_SubColeccion>>{_id:{_orden:"asc"}};            
-        }
-
         //configurar tipo de paginacion deseada:
         const typePaginate:number =  ETypePaginate.No;
 
@@ -315,7 +302,7 @@ export class emb_subColeccionService extends FSModelService<emb_SubColeccion, Ie
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             //================================================================
             //Query Condiciones:
-            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", QValue._id.val);            
+            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", _id);            
             //================================================================
             //no se requiere paginar       
             return cursorQueryRef;
@@ -323,7 +310,7 @@ export class emb_subColeccionService extends FSModelService<emb_SubColeccion, Ie
      
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc:null, limit:0, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc:null, limit:0, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
     }
 
@@ -372,9 +359,9 @@ export class emb_subColeccionService extends FSModelService<emb_SubColeccion, Ie
     //Recordar que no todos los tipos de paginacion aceptan "previo"
     //
     public paginate$(
-        control$:IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>, 
+        control$:IControl$<emb_SubColeccion>, 
         pageDirection: "previousPage" | "nextPage"
-    ):IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>> {
+    ):IControl$<emb_SubColeccion> {
 
         return this.paginteControl$(control$, pageDirection);
     }
@@ -485,7 +472,7 @@ export class emb_subColeccionService extends FSModelService<emb_SubColeccion, Ie
     /*createControl$()*/
     public createControl$(
         RFS:IRunFunSuscribe<emb_SubColeccion>
-    ):IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>{
+    ):IControl$<emb_SubColeccion>{
         let control$ = this.createPartialControl$(RFS, this.preGetDocs);
 
         //================================================================

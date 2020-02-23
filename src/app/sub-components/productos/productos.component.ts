@@ -30,10 +30,10 @@ export class ProductosComponent implements OnInit, OnDestroy {
   //contenedor de documento para trabajo en plantilla
   public Producto:Producto; 
 
-  public Producto$:IControl$<Producto, IProducto<IQValue_Producto>>;
+  public Producto$:IControl$<Producto>;
   //public Producto_pathDocCtrl$:IpathDoc$<Producto>;
 
-  public emb_SubColeccion$:IControl$<emb_SubColeccion, Iemb_SubColeccion<IQValue_emb_SubColeccion>>;
+  public emb_SubColeccion$:IControl$<emb_SubColeccion>;
 
   //array de documentos obtenidos de la bd
   //de acuerdo a los filtros aplicados

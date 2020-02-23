@@ -201,13 +201,13 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
     //solo es necesario recibirlo si por alguna razon se quiere paginar 
     //No teniendo como base los snapshotsDocs sino otra cosa
     public get$(
-        control$:IControl$<Producto, IProducto<IQValue_Producto>>,
+        control$:IControl$<Producto>,
         QValue:IProducto<IQValue_Producto> | null, 
         v_PreGet:Iv_PreGet_Producto = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit=this.defaultPageLimit, 
         startDoc:any=null, 
-    ):IControl$<Producto, IProducto<IQValue_Producto>>{
+    ):IControl$<Producto>{
         
         //================================================================
         //configurar QValue por default si se requiere:
@@ -240,7 +240,7 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
 
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }
@@ -254,34 +254,29 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
     //cuente con el path_id, para ese caso es mejor este metodo
     //
     //Parametros:
-    //doc$:
-    //objeto control$ con toda la informacion de la lectura reactiva (aunque 
-    //puede recibirse  null  si es la primera vez)
+    //control$:
+    //objeto  con toda la informacion de la lectura reactiva
     //
-    //RFS:
-    //objeto con las funciones next() y error() para ejecutar una vez este suscrito
-    //
-    //QValue:
-    //recibe un objeto creado a partir de la interfaz IModelo<IQValue_Modelo>
-    //que a su vez contiene los valores necesarios para construir la query
-    //(valores como:  buscar, rangos, iniciales, entre otros)
+    //_id:
+    //el id del documento, este _id puede ser de una fuente externa
     //
     //v_PreGet:
     //contiene el objeto con valores para customizar y enriquecer los 
     //docs obtenidos de la bd y antes de entregarlos a la suscripcion
     //
+    //path_EmbBase:
+    //es opcional para colecciones, es Obligatorios para subcolecciones 
+    //y que NO se desee consulta en collectionGroup
+    //
     //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc
     public getId$(
-        control$:IControl$<Producto, IProducto<IQValue_Producto>>, 
+        control$:IControl$<Producto>, 
         _id:string,
         v_PreGet:Iv_PreGet_Producto = null,
-        path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
-    ):IControl$<Producto, IProducto<IQValue_Producto>>{
+        path_EmbBase:string = null,
+    ):IControl$<Producto>{
 
         //================================================================
-        //configurar QValue por default si se requiere:
-        const QValue = <IProducto<IQValue_Producto>>{_id:{_orden:"asc", val:_id}};  
-        
         //configurar tipo de paginacion deseada:
         const typePaginate:number =  ETypePaginate.No;
 
@@ -294,7 +289,7 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             //================================================================
             //Query Condiciones:
-            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", QValue._id.val);            
+            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", _id);            
             //================================================================
             //no se requiere paginar            
             return cursorQueryRef;
@@ -302,19 +297,19 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
     
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc:null, limit:0, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc:null, limit:0, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
     }
 
     //TEST---------------------------------------------------------------------------------------------------------------------------
     public getPorNombre$(
-        control$:IControl$<Producto, IProducto<IQValue_Producto>>, 
+        control$:IControl$<Producto>, 
         QValue:IProducto<IQValue_Producto> | null,
         v_PreGet:Iv_PreGet_Producto = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit=this.defaultPageLimit, 
         startDoc:any=null
-    ):IControl$<Producto, IProducto<IQValue_Producto>>{
+    ):IControl$<Producto>{
         
         //================================================================
         //configurar QValue por default si se requiere:
@@ -364,19 +359,19 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
   
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }
 
     public getPorPrecio$(
-        control$:IControl$<Producto, IProducto<IQValue_Producto>>, 
+        control$:IControl$<Producto>, 
         QValue:IProducto<IQValue_Producto> | null,
         v_PreGet:Iv_PreGet_Producto = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit=this.defaultPageLimit, 
         startDoc:any=null
-    ):IControl$<Producto, IProducto<IQValue_Producto>>{
+    ):IControl$<Producto>{
         
         //================================================================
         //configurar QValue por default si se requiere:
@@ -455,19 +450,19 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
   
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }    
 
     public getPorMiscRuedas$(
-        control$:IControl$<Producto, IProducto<IQValue_Producto>>, 
+        control$:IControl$<Producto>, 
         QValue:IProducto<IQValue_Producto> | null, 
         v_PreGet:Iv_PreGet_Producto = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit=this.defaultPageLimit, 
         startDoc:any=null
-    ):IControl$<Producto, IProducto<IQValue_Producto>>{
+    ):IControl$<Producto>{
         
         //================================================================
         //configurar QValue por default si se requiere:
@@ -547,19 +542,19 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
 
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }    
 
     public getPorArrayNormal$(
-        control$:IControl$<Producto, IProducto<IQValue_Producto>>, 
+        control$:IControl$<Producto>, 
         QValue:IProducto<IQValue_Producto> | null,
         v_PreGet:Iv_PreGet_Producto = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit=this.defaultPageLimit,
         startDoc:any=null
-    ):IControl$<Producto, IProducto<IQValue_Producto>>{
+    ):IControl$<Producto>{
         
         //================================================================
         //configurar QValue por default si se requiere:
@@ -598,7 +593,7 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
      
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }   
@@ -646,9 +641,9 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
     //Recordar que no todos los tipos de paginacion aceptan "previo"
     //
     public paginate$(
-        control$:IControl$<Producto, IProducto<IQValue_Producto>>, 
+        control$:IControl$<Producto>, 
         pageDirection: "previousPage" | "nextPage"
-    ): IControl$<Producto, IProducto<IQValue_Producto>> {
+    ): IControl$<Producto> {
 
         return this.paginteControl$(control$, pageDirection);
     }
@@ -749,7 +744,7 @@ export class ProductoService extends FSModelService< Producto, IProducto<any>,  
     /*createControl$()*/
     public createControl$(
         RFS:IRunFunSuscribe<Producto>
-    ):IControl$<Producto, IProducto<IQValue_Producto>>{
+    ):IControl$<Producto>{
 
         let control$ = this.createPartialControl$(RFS, this.preGetDocs);
 

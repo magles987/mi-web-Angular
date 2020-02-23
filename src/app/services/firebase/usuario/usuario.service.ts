@@ -72,7 +72,7 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
     //================================================================
 
     //declarar controls$ foraneos de otros servicios
-    private f_Rol$:IControl$<Rol, IRol<IQValue_Rol>>;
+    private f_Rol$:IControl$<Rol>;
     private f_pathRol$:IpathControl$<Rol>;
     //================================================================
 
@@ -279,13 +279,13 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
     //solo es necesario recibirlo si por alguna razon se quiere paginar 
     //No teniendo como base los snapshotsDocs sino otra cosa
     public get$(
-        control$:IControl$<Usuario, IUsuario<IQValue_Usuario>>, 
+        control$:IControl$<Usuario>, 
         QValue:IUsuario<IQValue_Usuario> | null, 
         v_PreGet:Iv_PreGet_Usuario = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit=this.defaultPageLimit, 
         startDoc:any=null, 
-    ):IControl$<Usuario, IUsuario<IQValue_Usuario>>{
+    ):IControl$<Usuario>{
         
         //================================================================
         //configurar QValue por default si se requiere:
@@ -317,7 +317,7 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
 
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
 
     }
@@ -331,34 +331,29 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
     //cuente con el path_id, para ese caso es mejor este metodo
     //
     //Parametros:
-    //doc$:
-    //objeto control$ con toda la informacion de la lectura reactiva (aunque 
-    //puede recibirse  null  si es la primera vez)
+    //control$:
+    //objeto  con toda la informacion de la lectura reactiva
     //
-    //RFS:
-    //objeto con las funciones next() y error() para ejecutar una vez este suscrito
-    //
-    //QValue:
-    //recibe un objeto creado a partir de la interfaz IModelo<IQValue_Modelo>
-    //que a su vez contiene los valores necesarios para construir la query
-    //(valores como:  buscar, rangos, iniciales, entre otros)
+    //_id:
+    //el id del documento, este _id puede ser de una fuente externa
     //
     //v_PreGet:
     //contiene el objeto con valores para customizar y enriquecer los 
     //docs obtenidos de la bd y antes de entregarlos a la suscripcion
     //
+    //path_EmbBase:
+    //es opcional para colecciones, es Obligatorios para subcolecciones 
+    //y que NO se desee consulta en collectionGroup
+    //
     //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc
     public getId$(
-        control$: IControl$<Usuario, IUsuario<IQValue_Usuario>>,
+        control$: IControl$<Usuario>,
         _id:string,
         v_PreGet:Iv_PreGet_Usuario = null,
-        path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
-    ): IControl$<Usuario, IUsuario<IQValue_Usuario>> {
+        path_EmbBase:string = null,
+    ): IControl$<Usuario> {
 
         //================================================================
-        //configurar QValue por default si se requiere:
-        const QValue = <IUsuario<IQValue_Usuario>>{_id:{_orden:"asc", val:_id}};   
-
         //configurar tipo de paginacion deseada:
         const typePaginate:number =  ETypePaginate.No;
 
@@ -371,26 +366,75 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
             //================================================================
             //Query Condiciones:
-            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", QValue._id.val);            
+            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", _id);            
             //================================================================
             //no se requiere paginar            
             return cursorQueryRef;
         };   
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc:null, limit:0, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc:null, limit:0, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
     }
 
-    //TEST---------------------------------------------------------------------------------------------------------------------------
+    /*getUsuarioActualByAuthId()*/
+    // permite obtener el usuario actual por medio del _id entregado por el servicio
+    //auth una vez registrado y logueado
+    //
+    //Parametros:
+    //control$:
+    //objeto  con toda la informacion de la lectura reactiva
+    //
+    //auth_id:
+    //el id del documento a buscar, para este caso es un id de 
+    //proveedor externo entregado por firestore auth
+    //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
+    //
+    //path_EmbBase:
+    //es opcional para colecciones, es Obligatorios para subcolecciones 
+    //y que NO se desee consulta en collectionGroup
+    public getUsuarioActualByAuthId(
+        control$: IControl$<Usuario>,
+        auth_id:string,
+        v_PreGet:Iv_PreGet_Usuario = null,
+        path_EmbBase:string = null, 
+    ):IControl$<Usuario>{
+
+        //================================================================
+        //configurar tipo de paginacion deseada:
+        const typePaginate:number =  ETypePaginate.No;
+
+        //================================================================
+        //Configurar la query de esta lectura:
+        //esta query es una funcion que se cargará al behavior como filtro 
+        //al momento de que este se ejecute
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query) => {
+
+            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+            //================================================================
+            //Query Condiciones:
+            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", auth_id);            
+            //================================================================
+            //no se requiere paginar            
+            return cursorQueryRef;
+        };   
+        //================================================================
+        //objeto para parametro:
+        const QFilter:IQFilter = {query, v_PreGet, startDoc:null, limit:0, typePaginate};
+        return this.readControl$(control$, QFilter, path_EmbBase);
+    }
+
     public getPorNombre$(
-        control$: IControl$<Usuario, IUsuario<IQValue_Usuario>>,
+        control$: IControl$<Usuario>,
         QValue: IUsuario<IQValue_Usuario>,
         v_PreGet:Iv_PreGet_Usuario = null,
         path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
         limit=this.defaultPageLimit, 
         startDoc:any=null, 
-    ): IControl$<Usuario, IUsuario<IQValue_Usuario>> {
+    ): IControl$<Usuario> {
         
         //================================================================
         //configurar QValue por default si se requiere:
@@ -442,7 +486,7 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
     
         //================================================================
         //objeto para parametro:
-        const QFilter = {query, QValue, v_PreGet, startDoc, limit, typePaginate};
+        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
         return this.readControl$(control$, QFilter, path_EmbBase);
         
     }
@@ -490,9 +534,9 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
     //Recordar que no todos los tipos de paginacion aceptan "previo"
     //
     public paginate$(
-        control$: IControl$<Usuario, IUsuario<IQValue_Usuario>>,
+        control$: IControl$<Usuario>,
         pageDirection: "previousPage" | "nextPage"
-    ): IControl$<Usuario, IUsuario<IQValue_Usuario>> {
+    ): IControl$<Usuario> {
 
         return this.paginteControl$(control$, pageDirection);
     }
@@ -582,7 +626,7 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
     /*createControl$()*/
     public createControl$(
         RFS:IRunFunSuscribe<Usuario>
-    ):IControl$<Usuario, IUsuario<IQValue_Usuario>>{
+    ):IControl$<Usuario>{
         let control$ = this.createPartialControl$(RFS, this.preGetDocs);
 
         //================================================================
