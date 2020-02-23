@@ -1,5 +1,5 @@
 
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*IModelo  interfaz*/
 //La interfaz de modelo debe nombrarse en singular
 //
@@ -11,8 +11,6 @@
 //la estructura del modelo se basa en dos opciones: 
 //la debilmente tipada (interfaces) y la fuertemente tipada (las clases)
 //
-//================================================================================================================================
-/*IModelo  interfaz*/
 //la debilmente tipada es en la que se declaran las interfaces y se usara en 
 //declaraciones que solo requiera la referencia a los campos (donde no importe el tipo)
 //con el fin de dar mayor flexibilidad, sin embargo se hizo una modificacion para extender 
@@ -58,7 +56,7 @@ export interface IUsuario<TExtend>{
     fk_rol?: TExtend;
 }
 
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*Modelo  clase*/
 //la fuertemente tipada es en la que se declaran las clases (preferible no tener constructor y 
 //NO DEBE TENER METODOS) y se usaran para cuando se requiera crear objetos (inclusive 
@@ -116,6 +114,5 @@ export class Usuario implements IUsuario<any> {
     fk_rol:string = "";
 
 }
-
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 

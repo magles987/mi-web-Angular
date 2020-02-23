@@ -7,9 +7,7 @@ import { map, switchMap, mergeAll, concatAll, concatMap, mergeMap, mapTo, toArra
 import { v4 } from "uuid";
 import { IMetaCampo, IMetaColeccion } from './meta_Util';
 
-//================================================================================================================================
-/*ENUMERACIONES E ITERFACES*/
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*IQValue*/
 //interfaz que permite establecer propiedades que almacenan valores para la Query
 //como valores absolutos, rangos, comparaciones y demas.
@@ -30,8 +28,7 @@ export interface IQValue{
     _orden:"asc"|"desc";
     //...mas propiedades en comun....
 }
-
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*ETypePaginate*/
 //establece los tipos basicos de paginacion para firestore, se debe
 //tener en cuenta que paginar no es lo mismo que limitar
@@ -62,8 +59,7 @@ export enum ETypePaginate {
     //Esta paginacion solo permite la direccion de paginacion "siguiente"
     Full
 }
-
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*IQFilter*/
 //contiene las propiedades necesarias para construir una query estandar
 //con sus filtros
@@ -106,8 +102,7 @@ export interface IQFilter<TIModel_IQValue> {
     v_PreGet:unknown;
 
 }
-
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*IControl$*/
 //permite la declaracion de objetos control$ que continene todo lo
 //necesario para consultar y monitorear cambios
@@ -169,8 +164,7 @@ export interface IControl$<TModel, TIModel_IQValue> {
     // doc leidos para customizarlos y enriquezerlos
     preGetDoc:(doc:TModel, v_PreGet:any)=>TModel;
 }
-
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*IpathControl$*/
 //permite la declaracion de objetos control$ enfocado
 //query especifica de consulta de un doc por medio del
@@ -210,8 +204,7 @@ export interface IpathControl$<TModel> {
     preGetDoc:(doc:TModel, v_PreGet:any)=>TModel;
 
 }
-
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*IRunFunSuscribe*/
 //permite construir objetos con las propiedades de tipo funcion
 //que se ejecutan cuando se suscribe cada observable de los
@@ -221,10 +214,7 @@ export interface IRunFunSuscribe<TModel>{
     error: (err:any) => void;
     complete?:() => void;
 }
-
-//================================================================================================================================
-/*CLASES*/
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*FSModelService*/
 //es una especie de clase abstracta que no es un servicio (no se inyecta)
 //simplemente intenta complementar de funcionalidad (metodos especialmente) a los
@@ -1631,4 +1621,6 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
 
     //================================================================================================================================
 }
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+
 
