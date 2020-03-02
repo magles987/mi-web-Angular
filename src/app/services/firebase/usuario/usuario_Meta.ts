@@ -4,9 +4,8 @@ import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
 import { IRunFunSuscribe } from '../fs_Model_Service';
 
 import { Rol } from 'src/app/models/firebase/rol/rol';
-import { Rol_Meta } from '../rol/rol_Meta';
 
-//================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*{Modelo}_Meta*/
 //las clases _Meta que implementa la interfaz IModelo proporcionan
 //funciones y utilidades enfocadas al manejo de los controllers 
@@ -61,31 +60,8 @@ export class Usuario_Meta implements IUsuario<any>, IMetaColeccion {
 
     //metadata utilitaria todas dentro de __Util:
     __Util = {
-        codigoRolActual:0
+
     };
-
-    //================================================================
-    /*metadata dinamica:*/
-    //son propiedades-funcion RFS que se le asignaran a los respectivos 
-    //controls_ext$ para cargar y monitorear dinamicamente la metadata
-    RFS_rol:IRunFunSuscribe<Rol> = {
-        next:(roles:Rol[])=>{
-
-            this.fk_rol.selectList = [];
-            
-            const rol_m = new Rol_Meta();
-
-            roles.forEach(element => {
-                this.fk_rol.selectList.push(element._pathDoc);
-                if (element.codigo <= rol_m.__Util.baseCodigo) {
-                    this.fk_rol.default = element._pathDoc;
-                }
-            });
-
-            this.__Util.codigoRolActual = roles[roles.length-1].codigo;
-        },
-        error:(err)=>{}
-    }
 
     //================================================================
     constructor() {
@@ -93,9 +69,26 @@ export class Usuario_Meta implements IUsuario<any>, IMetaColeccion {
     }
    
     //================================================================
+    //metodos para actualizacion dinamica de metadata
+    
+    /*set_fk_rol()*/
+    //actualiza las opciones de rol a escoger de acuerdo
+    //al usuario que este logueado actualmente
+    public set_fk_rol(roles:Rol[], baseCodigo:number):void{
+        //actualiza todos los meta referente a seleccion multiple
+        this.fk_rol.selectList = [];                        
+        roles.forEach(element => {
+            this.fk_rol.selectList.push(element._pathDoc);
+            
+            //identifica cual es el default para el campo fk_rol
+            if (element.codigo <= baseCodigo) {
+                this.fk_rol.default = element._pathDoc;
+            }
+        });
+    }
 }
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*Clases _Meta para campo especiales (map_ y mapA_)*/
 //estas clases no requieren metadata de coleccion
 
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████

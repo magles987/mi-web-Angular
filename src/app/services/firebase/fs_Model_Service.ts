@@ -59,16 +59,19 @@ export enum ETypePaginate {
     //Esta paginacion solo permite la direccion de paginacion "siguiente"
     Full
 }
+
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+/*ETypePaginatePopulate*/
+//
+export enum ETypePaginatePopulate {
+    No,
+    Single,
+    Accumulative
+}
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*IQFilter*/
 //contiene las propiedades necesarias para construir una query estandar
 //con sus filtros
-//
-//Tipado:
-//TIModel_IQValue:
-//IMPORTANTE: recibe un tipado con sintaxis: TIModel<IQValue_Model>
-//Recordar: IQValue_Model  tipado especial enfocado a los valores
-//necesarios para construir la query
 
 export interface IQFilter {
 
@@ -167,7 +170,7 @@ export interface IControl$<TModel> {
 export interface IpathControl$<TModel> {
 
     observables: Observable<TModel | TModel[]>[];
-    suscriptions: Subscription[];
+    subscriptions: Subscription[];
 
     populateOpc?:{
         //observable resultante de la union del 
@@ -181,6 +184,8 @@ export interface IpathControl$<TModel> {
         limit:number;
         currentPageNum:number;
         _pathDocs:string[];
+
+        typePaginate:ETypePaginatePopulate;
         
     };
 
@@ -260,6 +265,8 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //por default es 50
     protected defaultPageLimit:number;
 
+    protected defaultLimitPopulate:number;
+
     //Control$ generico asignado para este servicio (se usa en servicios donde
     //no se requiera crear diferentes controls$ para monitorear lecturas, 
     //solo con este generico bastaria) 
@@ -271,6 +278,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     constructor() {
         this.isServiceReady = false;
         this.defaultPageLimit = 50;
+        this.defaultLimitPopulate = 10;
 
         this.f_Controls$ = [];
         this.f_pathControls$ = [];        
@@ -408,7 +416,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
         //preinstanciar el control$ a devolver     
         let pathControl$ = <IpathControl$<TModel>>{
             observables:[],
-            suscriptions:[],            
+            subscriptions:[],            
 
             RFS:RFS,
             preGetDoc:preGetDoc
@@ -420,7 +428,7 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
         //IMPORTANTE: se envia como _pathDoc  un  null  ya que solo se crea inicialmente
         //el obsebale pero no se desea realizar por ahora ninguna consulta a firestore
         pathControl$.observables[0] = this.getObsQueryPathControl(pathControl$, null)
-        pathControl$.suscriptions[0] = pathControl$.observables[0].subscribe(pathControl$.RFS);
+        pathControl$.subscriptions[0] = pathControl$.observables[0].subscribe(pathControl$.RFS);
 
         return pathControl$;
     }
@@ -841,13 +849,13 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
         pathControl$.populateOpc = undefined; //no es poblar
 
         //desactiva la anterior suscripcion para establecer la nueva
-        pathControl$.suscriptions[0].unsubscribe();
+        pathControl$.subscriptions[0].unsubscribe();
 
         //================================================================        
         //crea un nuevo observador en el index 0, no se requeriran mas observables
         //pero se hace por array ya que en poblar si se requieren varios observables
         pathControl$.observables[0] = this.getObsQueryPathControl(pathControl$, _pathDoc)
-        pathControl$.suscriptions[0] = pathControl$.observables[0].subscribe(pathControl$.RFS);
+        pathControl$.subscriptions[0] = pathControl$.observables[0].subscribe(pathControl$.RFS);
 
         return pathControl$;
     }
@@ -1017,95 +1025,309 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     }
     //================================================================================================================================
     /*populateControl$()*/
-    //pobla docs de acuerdo a los _pathDoc recibidos, normalmente estos 
-    //_pathDoc estan almacenados en campos   fk_   y son array
-    //este metodo tambien sirve para paginar (de forma acumulativa) por lo cual se llamará 
-    //tantas veces como se requieran docs foraneos
+    //permite el poblar documentos refernciado en campos con 
+    //prefijo  fk_  que almacenan rutas _pathDoc de este modelo
+    //este metodo se usa como paso intermedio en caso de desear
+    //personalizarlo exclusivamente para este servicio
     //
     //Parametros:
     //
-    //pathDoc$
-    //objeto control$ que almacena toda la configuracion necesaria para rastreo de
-    //los docs a poblar (configuracion como observables, suscriptions, y demas)
+    //pathControl$:
+    //objeto control$ con la configuracion de observables y subscriciones
+    //que se usen para poblar
     //
-    //RFS:
-    //funciones next() y error() a ejecutar en cada suscription
+    //fk_pathDocs:
+    //contiene el o los strings de _pathDoc que hacen referencia a otros documentos
+    //si es es un slo string indica que el campo   fk_  esta relacionado con otra 
+    //coleccion en modo 1a1 o 0a1, si es un array indica que el campo fk_ esta 
+    //relacionado con otra coleccion como  0aMuchos o 1aMuchos 
     //
-    //_pathDoc:
-    //contiene la o las referencias _pathDoc TODOS los docs de otras colecciones 
-    //o subcolecciones que normalmente estan almacenados en los campos fk_  , puede 
-    //ser sencillo o array (dependiendo si el campo fk_ ES O NO ARRAY) 
-    //(internamente se gestiona para trabajar como si fura array), solo 
-    //es necesario recibirlo la primera vez ,las demas se puede dejar vacio
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
+    //se pude recibir un null
     //
-    //limitePopulate:
-    //contiene el limite maximo de lecturas por pagina, solo es necesario 
-    //enviarlo la primera vez
+    //preGetDoc:
+    //funcion que se ejecuta antes de entregar los
+    //doc leidos para customizarlos y enriquezerlos
     //
-    public populateControl$(
+    //typePaginatePopulate:
+    //por medio de la enum  ETypePaginatePopulate  determina
+    //el tipo de paginacion a usar para poblar el pathControl$
+    //
+    //limitPopulate:
+    //si se desea un limite personalizado para la paginacion de poblar
+    protected populateControl$(
         pathControl$: IpathControl$<TModel>,
+        fk_pathDocs: string | string[],        
         v_PreGet:any,
         preGetDoc:(doc:TModel, v_PreGet:any)=>TModel,
-        _pathDocs: string | string[] = [],
-        limitePopulate: number = 0
+        typePaginatePopulate:ETypePaginatePopulate,
+        limitPopulate?:number
     ): IpathControl$<TModel> {
-        //================================================
-        //convertir (si es necesario) _pathDocs en array
-       _pathDocs = (Array.isArray(_pathDocs)) ? _pathDocs : [_pathDocs];     
-       
-        //================================================================
-        //verificar si NO existe un pathControl$  anterior con configuracion 
-        //previa de  populateOpc  lo cual indica que es inicial
-        if (!pathControl$.populateOpc || pathControl$.populateOpc == null) {
 
-            //================================================================
-            //inicializar todas las propiedades del pathControl$
-            //necesarias para el poblar       
-            pathControl$.v_PreGet = v_PreGet;
-            pathControl$.preGetDoc = preGetDoc;
-            pathControl$.populateOpc = {
-                obsMergeAll:null,
-                limit:limitePopulate,
-                currentPageNum:0, //no se pagina hasta que se hallan cargado
-                listDocsPopulate:[],
-                _pathDocs:_pathDocs            
-            };
 
-            while (
-                pathControl$.populateOpc._pathDocs.length > 0 &&
-                pathControl$.populateOpc._pathDocs.length > pathControl$.observables.length &&
-                pathControl$.populateOpc.limit > pathControl$.observables.length
-            ) {
-                
-                const i = pathControl$.observables.length;
-                pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, _pathDocs[i]));
-                pathControl$.suscriptions.push(pathControl$.observables[i].subscribe(pathControl$.RFS));
-            }
+        //­­­___ <TEST> _____________________________________
+        //New:
 
-            pathControl$.populateOpc.currentPageNum++;
-
-            pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
-
-        }else{
-            const limiteLote = pathControl$.populateOpc.limit * pathControl$.populateOpc.currentPageNum;
-            if (pathControl$.observables.length == limiteLote &&
-                pathControl$.populateOpc._pathDocs.length > limiteLote) {
-
-                while (pathControl$.populateOpc._pathDocs.length  > pathControl$.observables.length &&
-                        (pathControl$.populateOpc.limit + limiteLote) > pathControl$.observables.length 
-                ) {
-                      
-                    const i = pathControl$.observables.length;
-                    pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, _pathDocs[i]));
-                    pathControl$.suscriptions.push(pathControl$.observables[i].subscribe(pathControl$.RFS));
-                  }
-
-                pathControl$.populateOpc.currentPageNum++;
-
-                pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
-            }
+        //se analiza si es un pathControl$ ya usado para reiniciarlo
+        if (pathControl$.observables.length > 0 &&
+            pathControl$.subscriptions.length > 0
+        ) {
+            //desusbscripcion factorizada:
+            //ideal para reiniciar un poblar o paginarlo en modo single
+            pathControl$ = <IpathControl$<TModel>>FSModelService.unsubscribePartialPathControl$(pathControl$);
         }
-        //================================================================                        
+
+        //seguro para determinar que si el _pathDocs NO es un array
+        //se active automaticamente la   ETypePaginatePopulate.No  
+        //eliminando cualquier tipo de programacion previamente programado
+        typePaginatePopulate = (Array.isArray(fk_pathDocs)) ?
+            typePaginatePopulate :
+            ETypePaginatePopulate.No;
+
+        //se reinicia las opciones de populate para este pathControl$
+        pathControl$.populateOpc = {
+            _pathDocs : (Array.isArray(fk_pathDocs)) ? fk_pathDocs : [fk_pathDocs],
+            limit: (limitPopulate) ? limitPopulate : this.defaultLimitPopulate ,
+            currentPageNum: 0, //no se pagina hasta que se hallan cargado
+            listDocsPopulate: [],
+            obsMergeAll:null,
+            typePaginate:typePaginatePopulate
+        };
+
+        //comienza la creacion de los observables y su correspondiente subscripcion
+        //se analiza que se creen tantos como el   limit  y  la cantidad de   _pathDocs
+        //lo permitan
+        while (
+            pathControl$.populateOpc._pathDocs.length > 0 &&
+            pathControl$.populateOpc.limit > pathControl$.subscriptions.length &&
+            pathControl$.populateOpc._pathDocs.length > pathControl$.subscriptions.length             
+        ) {
+
+            const idx_sub_obs = pathControl$.subscriptions.length;
+            pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, pathControl$.populateOpc._pathDocs[idx_sub_obs]));
+            pathControl$.subscriptions.push(pathControl$.observables[idx_sub_obs].subscribe(pathControl$.RFS));
+        }
+
+        pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
+
+        //________________________________________________
+        //Old:
+
+        // //================================================
+        // //convertir (si es necesario) _pathDocs en array
+        // _pathDocs = (Array.isArray(_pathDocs)) ? _pathDocs : [_pathDocs];
+
+        // //================================================================
+        // //verificar si NO existe un pathControl$  anterior con configuracion 
+        // //previa de  populateOpc  lo cual indica que es inicial
+        // if (!pathControl$.populateOpc || pathControl$.populateOpc == null) {
+
+        //     //================================================================
+        //     //inicializar todas las propiedades del pathControl$
+        //     //necesarias para el poblar       
+        //     pathControl$.v_PreGet = v_PreGet;
+        //     pathControl$.preGetDoc = preGetDoc;
+        //     pathControl$.populateOpc = {
+        //         obsMergeAll: null,
+        //         limit: limitePopulate,
+        //         currentPageNum: 0, //no se pagina hasta que se hallan cargado
+        //         listDocsPopulate: [],
+        //         _pathDocs: _pathDocs
+        //     };
+
+        //     while (
+        //         pathControl$.populateOpc._pathDocs.length > 0 &&
+        //         pathControl$.populateOpc._pathDocs.length > pathControl$.observables.length &&
+        //         pathControl$.populateOpc.limit > pathControl$.observables.length
+        //     ) {
+
+        //         const i = pathControl$.observables.length;
+        //         pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, _pathDocs[i]));
+        //         pathControl$.suscriptions.push(pathControl$.observables[i].subscribe(pathControl$.RFS));
+        //     }
+
+        //     pathControl$.populateOpc.currentPageNum++;
+
+        //     pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
+
+        // } else {
+        //     const limiteLote = pathControl$.populateOpc.limit * pathControl$.populateOpc.currentPageNum;
+        //     if (pathControl$.observables.length == limiteLote &&
+        //         pathControl$.populateOpc._pathDocs.length > limiteLote) {
+
+        //         while (pathControl$.populateOpc._pathDocs.length > pathControl$.observables.length &&
+        //             (pathControl$.populateOpc.limit + limiteLote) > pathControl$.observables.length
+        //         ) {
+
+        //             const i = pathControl$.observables.length;
+        //             pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, _pathDocs[i]));
+        //             pathControl$.suscriptions.push(pathControl$.observables[i].subscribe(pathControl$.RFS));
+        //         }
+
+        //         pathControl$.populateOpc.currentPageNum++;
+
+        //         pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
+        //     }
+        // }
+        // //================================================================
+        //________________________________________________
+                   
+        return pathControl$;
+    }
+
+    /*pagitanePopulateControl$()*/
+    //es para paginacion basica de populate, por ahora solo redirecciona
+    //al metodo principal pagitanePopulateControl$(), aqui se uede implementar
+    //logica personalizada para cada paginacion, si se desea
+    //
+    //Parametros:
+    //pathControl$:
+    //el objeto contrl$ con los observables y suscripciones de cada
+    //populate
+    //
+    //pageDirection
+    // las 2 opciones de direccion de paginar (no en todos los 
+    //typePaginate se pueden usar)
+    protected pagitanePopulateControl$(
+        pathControl$:IpathControl$<TModel>,
+        pageDirection: "previousPage" | "nextPage"
+    ):IpathControl$<TModel>{
+
+        if (!pathControl$.populateOpc) {
+            return pathControl$;
+        }
+
+        switch (pathControl$.populateOpc.typePaginate) {
+            
+            
+            case ETypePaginatePopulate.No:                
+                break;
+
+            case ETypePaginatePopulate.Single:
+
+                //pagina anterior
+                if (pageDirection == "previousPage" &&
+                    pathControl$.subscriptions.length == pathControl$.observables.length &&
+                    pathControl$.populateOpc._pathDocs.length > 0 &&
+                    pathControl$.populateOpc.currentPageNum > 0 //el control de paginas se realiza con logica desde 0
+                ) {
+                    //const utilitarias:
+                    const limit = pathControl$.populateOpc.limit;
+                    const currentPage = pathControl$.populateOpc.currentPageNum;   
+                    const numPathDocs = pathControl$.populateOpc._pathDocs.length;
+                    //desusbscripcion factorizada:
+                    //ideal para reiniciar un poblar o paginarlo en modo single
+                    pathControl$ = <IpathControl$<TModel>>FSModelService.unsubscribePartialPathControl$(pathControl$);
+
+                    //los nuevos observables y sus correspondientes subscripciones
+                    //son asignados en lotes de acuerdo al   limit  que se halla configurado
+                    //RECORDAR:
+                    //en este tipo de paginacion los index de los observables y subscriptions 
+                    //NO corresponden al orden del array   _pathDocs para permitir la navegacion 
+                    //de nextpage y previouspage
+                    //
+                    //se declaran los index de inicio y fin  en que se asignara
+                    //los nuevos observables y sus correspondientes subscripciones
+                    let idx_pathDoc = (currentPage-1) * limit;
+                    const end_idx_pathDoc = currentPage * limit;
+                    while (idx_pathDoc < end_idx_pathDoc && idx_pathDoc < numPathDocs) {
+
+                        const idx_sub_Obs = pathControl$.subscriptions.length;
+                        pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, pathControl$.populateOpc._pathDocs[idx_sub_Obs]));
+                        pathControl$.subscriptions.push(pathControl$.observables[idx_sub_Obs].subscribe(pathControl$.RFS));
+                        
+                        idx_pathDoc++;
+                    }
+                    
+                    //se agrupan los observables con un mergeAll, para propositos generales
+                    pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
+
+                    //se actualiza el numero de pagina actual (recordar que es con logica 0)
+                    pathControl$.populateOpc.currentPageNum--;
+
+                }
+
+                if (pageDirection == "nextPage" && 
+                    pathControl$.subscriptions.length == pathControl$.observables.length &&
+                    pathControl$.populateOpc._pathDocs.length > (pathControl$.populateOpc.limit * pathControl$.populateOpc.currentPageNum)
+                ) {
+
+                    //const utilitarias:
+                    const limit = pathControl$.populateOpc.limit;
+                    const currentPage = pathControl$.populateOpc.currentPageNum;   
+                    const numPathDocs = pathControl$.populateOpc._pathDocs.length;
+
+                    //desusbscripcion factorizada:
+                    //ideal para reiniciar un poblar o paginarlo en modo single
+                    pathControl$ = <IpathControl$<TModel>>FSModelService.unsubscribePartialPathControl$(pathControl$);
+
+                    //los nuevos observables y sus correspondientes subscripciones
+                    //son asignados en lotes de acuerdo al   limit  que se halla configurado
+                    //RECORDAR:
+                    //en este tipo de paginacion los index de los observables y subscriptions 
+                    //NO corresponden al orden del array   _pathDocs para permitir la navegacion 
+                    //de nextpage y previouspage
+                    //
+                    //se declaran los index de inicio y fin  en que se asignara
+                    //los nuevos observables y sus correspondientes subscripciones                    
+                    let idx_pathDoc = currentPage * limit;
+                    const end_idx_pathDoc = (currentPage+1) * limit;
+                    while (idx_pathDoc < end_idx_pathDoc && idx_pathDoc < numPathDocs) {
+
+                        const idx_sub_Obs = pathControl$.subscriptions.length;
+                        pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, pathControl$.populateOpc._pathDocs[idx_sub_Obs]));
+                        pathControl$.subscriptions.push(pathControl$.observables[idx_sub_Obs].subscribe(pathControl$.RFS));
+                        
+                        idx_pathDoc++;
+                    }
+                    
+                    //se agrupan los observables con un mergeAll, para propositos generales
+                    pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
+
+                    //se actualiza el numero de pagina actual (recordar que es con logica 0)
+                    pathControl$.populateOpc.currentPageNum++;
+                }
+                break;      
+                
+            case ETypePaginatePopulate.Accumulative:
+
+                if (pageDirection == "nextPage" &&
+                    pathControl$.populateOpc._pathDocs.length > pathControl$.populateOpc.limit * pathControl$.populateOpc.currentPageNum
+                ) {
+                    //const utilitarias:
+                    const limit = pathControl$.populateOpc.limit;
+                    const currentPage = pathControl$.populateOpc.currentPageNum;   
+                    const numPathDocs = pathControl$.populateOpc._pathDocs.length;
+                    const accumulativeLimit = limit * currentPage;
+        
+                    //los nuevos observables y sus correspondientes subscripciones
+                    //son asignados al final del array correspondiente de forma acumulativa
+                    //hasta determinar que no sobrepasen el limite acumulativo o  la cantidad
+                    //de _pathDocs   que existan 
+                    //RECORDAR:
+                    //en este tipo de paginacion los index de los observables y subscriptions 
+                    //SI corresponden al orden del array   _pathDocs 
+                    while (pathControl$.subscriptions.length < accumulativeLimit &&
+                        pathControl$.subscriptions.length < numPathDocs
+                    ) {
+                        const idx_sub_Obs = pathControl$.subscriptions.length;
+                        pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, pathControl$.populateOpc._pathDocs[idx_sub_Obs]));
+                        pathControl$.subscriptions.push(pathControl$.observables[idx_sub_Obs].subscribe(pathControl$.RFS));
+                    }
+
+                    pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
+
+                    pathControl$.populateOpc.currentPageNum++;
+                }                
+
+                break;                     
+        
+            default:
+                break;
+        }
+
         return pathControl$;
     }
     //================================================================================================================================
@@ -1168,11 +1390,10 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
         }
 
         for (let i = 0; i < pathControls$.length; i++) {
-            while (pathControls$[i].observables.length > 0) {
-                pathControls$[i].suscriptions[pathControls$[i].observables.length - 1].unsubscribe();
-                pathControls$[i].suscriptions.pop();
-                pathControls$[i].observables.pop();
-            }
+
+            //desusbscripcion factorizada:
+            pathControls$[i] = FSModelService.unsubscribePartialPathControl$(pathControls$[i]);
+
             //No deja docs almacenados si es poblar:
             if (pathControls$[i].populateOpc) {
                 pathControls$[i].populateOpc = undefined; 
@@ -1180,6 +1401,29 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
         }       
         return;
     }
+
+    /*unsubscribePartialPathControl$()*/
+    //metodo especial que factoriza parte de la desubscripcion 
+    //de un pathControl$ para facilitar la utilizacion cuando 
+    //se requiere populate o en la desubscripcion estandar
+    //Parametros:
+    //
+    private static unsubscribePartialPathControl$(
+        pathControl$:IpathControl$<unknown>
+    ):IpathControl$<unknown>{
+
+        //conteo decremental mientras elimina los observables y
+        //suscripciones que ya no se necesitan 
+        // SE ELMINAN TODOS
+        while (pathControl$.observables.length > 0) {
+            pathControl$.subscriptions[pathControl$.observables.length - 1].unsubscribe();
+            pathControl$.subscriptions.pop();
+            pathControl$.observables.pop();
+        }        
+
+        return pathControl$;
+    }
+
 
     public unsubscribe_g_Control$():void{
         FSModelService.unsubscribeControl$([this.g_Control$]);

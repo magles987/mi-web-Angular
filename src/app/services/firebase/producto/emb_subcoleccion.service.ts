@@ -13,7 +13,7 @@ import { map, switchMap, } from 'rxjs/operators';
 
 import { Iemb_SubColeccion, emb_SubColeccion } from '../../../models/firebase/producto/emb_subColeccion';
 import { emb_SubColeccion_Meta} from './emb_subcoleccion_Meta';
-import { FSModelService, IQValue, ETypePaginate, IQFilter,IControl$, IpathControl$, IRunFunSuscribe } from '../fs_Model_Service';
+import { FSModelService, IQValue, ETypePaginate, IQFilter,IControl$, IpathControl$, IRunFunSuscribe, ETypePaginatePopulate } from '../fs_Model_Service';
 
 //================================================================================================================================
 /*INTERFACES y ENUMs especiales para cada modelo de service*/
@@ -365,7 +365,64 @@ export class emb_subColeccionService extends FSModelService<emb_SubColeccion, Ie
 
         return this.paginteControl$(control$, pageDirection);
     }
+    //================================================================================================================================
+    /*populate$()*/
+    //permite el poblar documentos refernciado en campos con 
+    //prefijo  fk_  que almacenan rutas _pathDoc de este modelo
+    //este metodo se usa como paso intermedio en caso de desear
+    //personalizarlo exclusivamente para este servicio
+    //
+    //Parametros:
+    //pathControl$:
+    //objeto control$ con la configuracion de observables y subscriciones
+    //que se usen para poblar
+    //
+    //fk_pathDocs:
+    //contiene el o los strings de _pathDoc que hacen referencia a otros documentos
+    //si es es un slo string indica que el campo   fk_  esta relacionado con otra 
+    //coleccion en modo 1a1 o 0a1, si es un array indica que el campo fk_ esta 
+    //relacionado con otra coleccion como  0aMuchos o 1aMuchos 
+    //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
+    //se pude recibir un null
+    //
+    //limitPopulate:
+    //si se desea un limite personalizado para la paginacion de poblar
+    public populate$(
+        pathControl$: IpathControl$<emb_SubColeccion>,
+        fk_pathDocs: string | string[],
+        v_PreGet:Iv_PreGet_emb_SubColeccion | null = null,        
+        limitPopulate?:number
+    ): IpathControl$<emb_SubColeccion> {
 
+        //conigurar el tipo de paginacion deseada
+        const typePaginate = ETypePaginatePopulate.Single;
+
+        return this.populateControl$(pathControl$, fk_pathDocs, v_PreGet, this.preGetDocs, typePaginate, limitPopulate);
+    }
+
+    /*pagitanePopulate()*/
+    //es para paginacion basica de populate, por ahora solo redirecciona
+    //al metodo principal pagitanePopulateControl$(), aqui se uede implementar
+    //logica personalizada para cada paginacion, si se desea
+    //
+    //Parametros:
+    //pathControl$:
+    //el objeto contrl$ con los observables y suscripciones de cada
+    //populate
+    //
+    //pageDirection
+    // las 2 opciones de direccion de paginar (no en todos los 
+    //typePaginate se pueden usar)
+    public pagitanePopulate(
+        pathControl$:IpathControl$<emb_SubColeccion>,
+        pageDirection: "previousPage" | "nextPage"
+    ):IpathControl$<emb_SubColeccion>{
+
+        return this.pagitanePopulateControl$(pathControl$, pageDirection);
+    }    
     //================================================================================================================================    
     /*create*/
     //permite la creacion de un doc en tipo set

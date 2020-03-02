@@ -1,7 +1,7 @@
 import { IRol, Rol} from '../../../models/firebase/rol/rol';
 import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
 
-//================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*{Modelo}_Meta*/
 //las clases _Meta que implementa la interfaz IModelo proporcionan
 //funciones y utilidades enfocadas al manejo de los controllers 
@@ -64,20 +64,19 @@ export class Rol_Meta  implements IRol<any>, IMetaColeccion {
         //de los codigos de rol
         baseCodigo : 10,
     };
-    //================================================================
-    /*metadata dinamica:*/
-    //son propiedades-funcion RFS que se le asignaran a los respectivos controls$
-    //para cargar y monitorear dinamicamente la metadata
 
     //================================================================
     constructor() {
         //potencia para codigo de rol por default
         this.codigo.default = this.codigo.default ** this.__Util.baseCodigo;
     }
- 
+    //================================================================
+    //metodos para actualizacion dinamica de metadata
+    
+    //================================================================
 }
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*Clases _Meta para campo especiales (map_ y mapA_)*/
 //estas clases no requieren metadata de coleccion
 
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████

@@ -9,7 +9,7 @@ import { map, switchMap, } from 'rxjs/operators';
 
 import { IUsuario, Usuario } from '../../../models/firebase/usuario/usuario';
 import { Usuario_Meta } from './usuario_Meta';
-import { FSModelService, ETypePaginate, IQFilter,IControl$, IpathControl$, IRunFunSuscribe, IQValue } from '../fs_Model_Service';
+import { FSModelService, ETypePaginate, IQFilter,IControl$, IpathControl$, IRunFunSuscribe, IQValue, ETypePaginatePopulate } from '../fs_Model_Service';
 
 //controls y modelos externos
 import { Rol, IRol } from 'src/app/models/firebase/rol/rol';
@@ -98,15 +98,9 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
         //this.limitePaginaPredefinido = 10;
 
         //================================================================
-        //inicializar TODOS los control$ foraneos a usar (irlos agregando 
-        //1 a 1 al array f_Controls$) y ejecutar los metodos de tipo 
-        //set_f_[Control_descripcion]$ que se tengan previstos (normalmente 
-        //se requerirá llamar al menos un metodo  de tipo set_f_[Control_descripcion]$ 
-        //por cada f_[control]$ que se requiera)
-        // this.f_Rol$ = this._rolService.createControl$(this.Model_Meta.RFS_rol);
-        // this.f_Controls$.push(this.f_Rol$);
-        // this.f_pathRol$ = this._rolService.createPathControl$();  
-        this.set_f_RolCodigoForUsuario$();
+        //aqui se debe llamar a todos los metodos setMeta_fk_[campo] de 
+        //campos foraneos para este service        
+        this.setMeta_fk_rol();
 
         //================================================================
         //--solo para TEST-------------------------------
@@ -115,37 +109,39 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
     }
 
     //================================================================================================================================
-    /*Metodos: set_f_[Control_descripcion]$()*/
-    //permiten leer  docs de otros servicios que tengan algun tipo 
-    //de relacion con este y que tengan informacion importante para 
-    //enriquecer este servicio (por ejemplo obtener metadata dinamica)
+    /*Metodos: setMeta_fk_[campo]() Aqui se declaran*/
+    //estos metodos permiten reconfigurar la metadata de los campos de 
+    //este service que tengan algun tipo de relacion con servces foraneos
     //
-    //cada f_[control]$ declarado, debe tener asignado al menos un metodo 
-    //set_f_[Control_descripcion]$()  
-    //estos metodos pueden ser llamados desde el constructor de este servicio,
-    //que es lo que normalmente ocurre, pero tambien pueden ser llamados 
-    //incluso desde el exterior de este servicio, cuando se requiera actualizar
-    //los docs leidos 
 
-    /*set_f_RolCodigoForUsuario$()*/
-    //actualiza la metadata del modelo Usuario para determinar que 
-    //nivel de roles puede crear el usuario actual
+    /*setMeta_fk_rol()*/
+    //actualiza la metadata de fk_rol dependiendo 
+    //de que usuario esta logueado actualmente
     //
     //Parametros:
-    //maxCodigo: indica el codigo maximo de nivle de privilegios
-    //que se deben buscar en la coleccion rol
-    public set_f_RolCodigoForUsuario$(pathRol?:string):void{
+    //pathRol: recibe el _pathDoc del usuario actualmente logueado
+    //(si es que esta logueado), para consultar los docs necesarios para
+    //la metadata
+    public setMeta_fk_rol(pathRol?:string):void{
 
         this._rolService.ready()
         .then(()=>{
 
             if (!this.f_Rol$ || this.f_Rol$ == null) {
-                this.f_Rol$ = this._rolService.createControl$(this.Model_Meta.RFS_rol);
+
+                //Funcion de tipo rfs_fk_[campo] que permite
+                //actualizar dinamicamente la metadata para este campo 
+                const rfs_fk_rol:IRunFunSuscribe<Rol> = {
+                    next:(roles:Rol[])=>{this.Model_Meta.set_fk_rol(roles, this._rolService.Model_Meta.__Util.baseCodigo)},
+                    error:(err)=>{console.log(err)}
+                }
+                this.f_Rol$ = this._rolService.createControl$(rfs_fk_rol);
                 this.f_Controls$.push(this.f_Rol$);            
             }
     
+            const codigoUsuario =  this._rolService.Model_Meta.__Util.baseCodigo;
+
             if (!pathRol || pathRol == null)  {
-                const codigoUsuario =  this._rolService.Model_Meta.__Util.baseCodigo;
                 this.f_Rol$ = this._rolService.getByCodigoForUsuario$(this.f_Rol$, codigoUsuario, null);         
             }else{
                 if (!this.f_pathRol$ || this.f_pathRol$ == null) {
@@ -153,6 +149,8 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
                         next:(rol:Rol)=>{
                             if (rol != null) {
                                 this.f_Rol$ = this._rolService.getByCodigoForUsuario$(this.f_Rol$, rol.codigo, null);     
+                            }else{
+                                this.f_Rol$ = this._rolService.getByCodigoForUsuario$(this.f_Rol$, codigoUsuario, null);      
                             }
                         },
                         error:(err)=>{console.log(err)}
@@ -513,7 +511,7 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
     //
     public getBy_pathDoc$(
         pathControl$: IpathControl$<Usuario>,       
-        v_PreGet:Iv_PreGet_Usuario | null,
+        v_PreGet:Iv_PreGet_Usuario | null = null,
         _pathDoc: string | null
     ): IpathControl$<Usuario> {
 
@@ -539,6 +537,65 @@ export class UsuarioService extends FSModelService< Usuario, IUsuario<any>,  Usu
     ): IControl$<Usuario> {
 
         return this.paginteControl$(control$, pageDirection);
+    }
+
+    //================================================================================================================================
+    /*populate$()*/
+    //permite el poblar documentos refernciado en campos con 
+    //prefijo  fk_  que almacenan rutas _pathDoc de este modelo
+    //este metodo se usa como paso intermedio en caso de desear
+    //personalizarlo exclusivamente para este servicio
+    //
+    //Parametros:
+    //pathControl$:
+    //objeto control$ con la configuracion de observables y subscriciones
+    //que se usen para poblar
+    //
+    //fk_pathDocs:
+    //contiene el o los strings de _pathDoc que hacen referencia a otros documentos
+    //si es es un slo string indica que el campo   fk_  esta relacionado con otra 
+    //coleccion en modo 1a1 o 0a1, si es un array indica que el campo fk_ esta 
+    //relacionado con otra coleccion como  0aMuchos o 1aMuchos 
+    //
+    //v_PreGet:
+    //contiene el objeto con valores para customizar y enriquecer los 
+    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
+    //se pude recibir un null
+    //
+    //limitPopulate:
+    //si se desea un limite personalizado para la paginacion de poblar
+    public populate$(
+        pathControl$: IpathControl$<Usuario>,
+        fk_pathDocs: string | string[],
+        v_PreGet:Iv_PreGet_Usuario | null = null,        
+        limitPopulate?:number
+    ): IpathControl$<Usuario> {
+        
+        //conigurar el tipo de paginacion deseada
+        const typePaginate = ETypePaginatePopulate.Single;
+
+        return this.populateControl$(pathControl$, fk_pathDocs, v_PreGet, this.preGetDocs, typePaginate, limitPopulate);
+    }
+
+    /*pagitanePopulate()*/
+    //es para paginacion basica de populate, por ahora solo redirecciona
+    //al metodo principal pagitanePopulateControl$(), aqui se uede implementar
+    //logica personalizada para cada paginacion, si se desea
+    //
+    //Parametros:
+    //pathControl$:
+    //el objeto contrl$ con los observables y suscripciones de cada
+    //populate
+    //
+    //pageDirection
+    // las 2 opciones de direccion de paginar (no en todos los 
+    //typePaginate se pueden usar)
+    public pagitanePopulate(
+        pathControl$:IpathControl$<Usuario>,
+        pageDirection: "previousPage" | "nextPage"
+    ):IpathControl$<Usuario>{
+
+        return this.pagitanePopulateControl$(pathControl$, pageDirection);
     }
 
     //================================================================================================================================    
