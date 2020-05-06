@@ -55,7 +55,7 @@ export interface IRol<TExtend>{
     strCodigo?: TExtend;
     codigo?: TExtend;
 
-    emb_Permisos: TExtend;
+    emb_Permisos?: TExtend;
 
 }
 

@@ -15,6 +15,7 @@
     </thead>
     <tbody>
       <tr *ngFor="let item of this.listProductos">
+        
         <td>{{item._id}}</td>
         <td>{{item.nombre}}</td>
         <td>{{item.categoria}}</td>
@@ -23,6 +24,7 @@
       </tr>
     </tbody>
   </table>
+  <div style="font-size: 18;"> Cantidad =  {{this.listProductos.length}}</div>
 </div>
 
 <br/>

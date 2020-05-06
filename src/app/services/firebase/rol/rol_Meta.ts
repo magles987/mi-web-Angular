@@ -1,5 +1,6 @@
 import { IRol, Rol} from '../../../models/firebase/rol/rol';
-import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
+import { IMetaColeccion, IMetaCampo, nomsColecciones, Model_Meta } from '../meta_Util';
+
 
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*{Modelo}_Meta*/
@@ -13,7 +14,7 @@ import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
 //
 //IMPORTANTE: en esta clase si se deberia agregar metodos y demas funcionalidades
 
-export class Rol_Meta  implements IRol<any>, IMetaColeccion {
+export class Rol_Meta extends Model_Meta implements IRol<any>, IMetaColeccion {
 
     //================================================================
     /*metadata estatica:*/
@@ -63,17 +64,34 @@ export class Rol_Meta  implements IRol<any>, IMetaColeccion {
         //contiene la base para potencia
         //de los codigos de rol
         baseCodigo : 10,
+        
+        //determina si un rol tiene la capacidad
+        // de crear roles de su mismo nivel
+        isRolCreaRol:true
     };
 
+    //keyHandlers$ foraneos:  
+
     //================================================================
-    constructor() {
+    constructor(
+        
+    ) {
+        super();
         //potencia para codigo de rol por default
         this.codigo.default = this.codigo.default ** this.__Util.baseCodigo;
     }
+
     //================================================================
-    //metodos para actualizacion dinamica de metadata
-    
-    //================================================================
+    /*export_meta__keyHadlersOrPathHandlers$()*/
+    //exporta todas las keys handlers o pathhandlers usadas por este meta
+    public export_meta__keyHadlersOrPathHandlers$():string[]{        
+        //aqui TODOS los services en el contenedor de retorno
+        return [            
+
+        ];
+    }
+
+
 }
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*Clases _Meta para campo especiales (map_ y mapA_)*/

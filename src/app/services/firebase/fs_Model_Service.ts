@@ -1,33 +1,85 @@
 
-import { AngularFirestore, AngularFirestoreCollection, AngularFirestoreDocument, AngularFirestoreCollectionGroup } from '@angular/fire/firestore';
+import { AngularFirestore, AngularFirestoreCollection, AngularFirestoreDocument, AngularFirestoreCollectionGroup, DocumentChangeAction } from '@angular/fire/firestore';
 import { Observable, observable, Subject, BehaviorSubject, from, fromEvent, of, Subscription, interval, timer, combineLatest, empty } from 'rxjs';
 import { map, switchMap, mergeAll, concatAll, concatMap, mergeMap, mapTo, toArray, concat, skip } from 'rxjs/operators';
 
 //permite crear los _ids personalizados
-import { v4 } from "uuid";
-import { IMetaCampo, IMetaColeccion } from './meta_Util';
+import { IMetaCampo, IMetaColeccion, Model_Meta } from './meta_Util';
+import { Fs_Util } from './fs_Util';
+import { IValuesQuery, IHooksService } from '../IModels-Hooks-Querys/_IShared';
+import { Fs_MServiceHandler$, Fs_MServicePathHandler$ } from './fs_ServiceHandler$';
+import { IRunFunSuscribe } from '../ServiceHandler$';
 
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
-/*IQValue*/
-//interfaz que permite establecer propiedades que almacenan valores para la Query
-//como valores absolutos, rangos, comparaciones y demas.
-//(para los campos del modelo sobre los cuales se ejecuten algun tipo de consulta)
-//
-//a los campos se les puede asignar propiedades personalizadas sin embargo existen
-// algunas propiedades comunes como:
-// val-> contiene el valor absoluto para la busqueda
-// ini-> contiene el valor inicial para la busqueda (ideal para la inicial de los campos string)
-// min-> valor minimo (ideal para number)
-// max-> valor maximo (ideal para number)
-export interface IQValue{
-    val?: any;
-    ini?: string;
-    min?: number;
-    max?: number;
+/*Fs_HooksService<TModel, TModel_Meta>*/
+//clase intermedia para redefinir los metodos hooks de 
+//acuerdo a las necesidades de Firestore para hacer referencia 
+//en la clase padre de cada ModelService
+export abstract class Fs_HooksService<TModel, TModel_Meta> implements IHooksService<TModel> {
 
-    _orden:"asc"|"desc";
-    //...mas propiedades en comun....
+    //================================================
+    //para todas las implemetaciones referentes a 
+    //FS (Firestore) requieren las utilidades Fs_Util
+    abstract fs_Util:Fs_Util<TModel, TModel_Meta>;
+    
+    //================================================
+    constructor(){
+    }
+    //================================================
+    //Aqui todas las modificaciones (sobreescrituras)
+    //a los metodos declarados en la interfaz global 
+    //IHooksService que requieran personalizacion para 
+    //Firestore 
+    //IMPORTANTE: todo parametro adicional debe se opcional
+
+    abstract preGetDoc(Doc: TModel): TModel;
+    abstract preDeleteDoc(_id: string): string ;
+
+    //preModDoc() se le debe añadir parametros de soporte
+    //para usar en Firestore como:
+    //
+    //isStrongUpdate?: para determinar si es editado fuerte
+    //
+    //path_EmbBase?: ruta base para las subColecciones
+    //
+    abstract preModDoc(
+        Doc:TModel, 
+        isCreate: boolean,
+        isStrongUpdate?:boolean,
+        path_EmbBase?:string
+    ):TModel;
+
+    abstract postModDoc(Doc: TModel, isCreate: boolean):void;
+    abstract postDeleteDoc(_id: string):void;
+
 }
+
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+/*Ifs_Filter:*/
+//agrega propiedades auxiliares para la construccion de la 
+//consulta que son exclusivas para Firestore
+export interface Ifs_Filter extends IValuesQuery {
+    path_EmbBase?:string | null;
+    startDoc?:unknown | null;
+
+    //OBLIGATORIA, contiene la funcion query que se ejecutara para
+    //solicitar los docs a firestore de acuerdo a la construccion
+    //interna de dicha funcion
+    query?:(ref:firebase.firestore.CollectionReference | firebase.firestore.Query, BhFilter:unknown)=>firebase.firestore.CollectionReference | firebase.firestore.Query;
+
+    //contiene un valor enum de EtipoPaginar que indica que tipo
+    //de paginacion se requiere
+    typePaginate?: ETypePaginate;
+
+    //contiene el path de la coleccion o subcoleccion
+    pathCollection?: string;
+
+    //determina si se requiere usar subCollectionGroup
+    //que son querys especiales que agrupan todas las subcolecciones
+    //con el mismo nombre de una coleccion o subcoleccion padre
+    isCollectionGroup?:boolean;    
+}
+
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*ETypePaginate*/
 //establece los tipos basicos de paginacion para firestore, se debe
@@ -35,243 +87,134 @@ export interface IQValue{
 //TODA query debe tener asignado un limite, esto no significa que toda
 //query requiera paginarse
 export enum ETypePaginate {
+
     //indica que la consulta no se pagina (ideal para consultas que se
     //sabe que devuelve 1 solo doc o para querys muy especificas
     //(como ultimoDoc$))
-    No,
+    No = 1, //para que no inicie en 0
 
-    //Paginacion basica que solo requiere de 1 observable del control$
-    //permite direccion de paginacion  "previo" || "siguiente", por ahora
-    //no deja copia de los docs leidos en paginas anteriores o siguientes
-    //(solo se monitorea la actual)
+    //Paginacion basica que solo requiere de 1 observable del handler$
+    //permite direccion de paginacion  "previo" || "siguiente", 
+    //esta opcion NO deja copia de los docs leidos nativamente que 
+    //no se esten rastreando,si se desea este comportamiento tendria 
+    //que hacerse afuera del servicio
     Single,
 
     //Paginacion que acumula el limite de lectura del query y asi devolver
     //en cada paginacion la cantidad de docs previamente leidos + la nueva pagina
     //Solo permite direccion de paginacion "siguiente"
     //IMPORTANTE: este tipo de paginacion es el que consume mas lecturas en firestore
+    //porque relee y rastrea TODOS los docs que se hallan paginado hasta el momento
     Accumulative,
 
-    //Paginacion especial que crea un behavior, observable  y suscription
-    //por cada pagina que se solicite, permite monitorear TODOS los documentos
-    //previamente leidos y se autogestiona para detectar duplicados y ahorro
-    //de momoria cuando los observables estan monitoreando vacios[].
+    //Paginacion especial que crea un handler$ por cada pagina que se solicite,
+    //permite monitorear TODOS los documentos previamente leidos y se
+    //autogestiona para detectar duplicados y ahorro de momoria cuando
+    // los observables estan monitoreando vacios[].
     //Esta paginacion solo permite la direccion de paginacion "siguiente"
     Full
 }
 
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*ETypePaginatePopulate*/
-//
+//tipos basicos para la paginacion de poblar
 export enum ETypePaginatePopulate {
-    No,
+
+    //no se pagina con lo cual quiere decir que se 
+    //han leido y rastreado todos los docs a poblar
+    No  = 1, //para que no inicie en 0
+
+    //se pagina y rastrea solo los docs a poblar 
+    //que esten en la pagina actual, NO se deja copia
+    //de los docs que se hallan leido en otras paginas
     Single,
-    Accumulative
+
+    //se pagina y rastrea solo los docs a poblar 
+    //que esten en la pagina actual, solo se puede paginar
+    //a siguiente y deja copia de los docs anteriores
+    // (pero no se rastrean)
+    AccumulativePasive,
+
+    //se pagina y se rastrea TODOS los docs a poblar 
+    //que se vayan leyendo
+    Full
 }
-//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
-/*IQFilter*/
-//contiene las propiedades necesarias para construir una query estandar
-//con sus filtros
 
-export interface IQFilter {
-
-    //OBLIGATORIA, contiene la funcion query que se ejecutara para
-    //solicitar los docs a firestore de acuerdo a la construccion
-    //interna de dicha funcion
-    query:(ref:firebase.firestore.CollectionReference | firebase.firestore.Query)=>firebase.firestore.CollectionReference | firebase.firestore.Query;
-
-    //contiene un valor enum de EtipoPaginar que indica que tipo
-    //de paginacion se requiere
-    typePaginate: ETypePaginate;
-
-    //limite maximo de documentos que se deben leer
-    //(especialmente en paginacion)
-    limit:number;
-
-    //aunque se define como any que en realidad es un snapshotDocument
-    //de firestore que es necesario para determinar apartir
-    //de que documento se empieza la lectura (necesario para ambos
-    //tipos de paginacion (estandar o full))
-    startDoc:any;
-
-    //contiene el objeto con valores para customizar y enriquecer los 
-    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
-    v_PreGet:unknown;
-
-}
-//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
-/*IControl$*/
-//permite la declaracion de objetos control$ que continene todo lo
-//necesario para consultar y monitorear cambios
-//Tipado:
-//TModel:
-//interfaz de la clase modelo
-//TIModel_IQValue:
-//IMPORTANTE: recibe un tipado con sintaxis: TIModel<IQValue_Model>
-//Recordar: IQValue_Model  tipado especial enfocado a los valores
-//necesarios para construir la query
-export interface IControl$<TModel> {
-    //objetos para rastreo y monitoreo de las querys:
-    behaviors: BehaviorSubject<IQFilter>[];
-    observables: Observable<TModel[]>[];
-    //un solo observable puede tener muchas suscripciones
-    //por lo tanto esta propiedad es un array bidimensional
-    subscriptions: Subscription[][];
-    //observable resultante de la union del 
-    //array de observables por medio de MergeAll()
-    //se usa principalmente para la paginacion full
-    //en casos en donde se desee agrupar (merge) todos
-    //los observables correspondientes al array
-    obsMergeAll:Observable<TModel[]>;
-
-    //contiene el path de la coleccion o subcoleccion
-    pathCollection: string;
-    //determina si se requiere usar subCollectionGroup
-    //que son querys especiales que agrupan todas las subcolecciones
-    //con el mismo nombre de una coleccion o subcoleccion padre
-    isCollectionGroup:boolean;
-
-    //almacena los docs que se estan rastreando
-    listDocs: TModel[];
-
-    //array que contendrá un todos los snapshotDocs
-    //claves para paginacion por medio del metodo startAt()
-    snapshotStartDocs: any[];
-
-    //lleva el control de las paginas que se han paginado
-    currentPageNum: number;
-
-    //puede contener una copia del limite de paginacion
-    //normal (para la mayoria de tipos de paginacion) o
-    //contienen el acumulado de limite que se aumenta
-    //dinamicamente cuando se usa el tipo de paginacion
-    //acumulativa
-    accumulatedLimit: number;
-
-    //contiene toda la informacion especifica para
-    //construir la query
-    QFilter:IQFilter;
-
-    //las funciones next(), error() (y complete()
-    //opcional) que se ejecutan una suscrito al
-    //observable correspondiente
-    RFSs:IRunFunSuscribe<TModel>[];
-
-    //funcion que se ejecuta antes de entregar los
-    // doc leidos para customizarlos y enriquezerlos
-    preGetDoc:(doc:TModel, v_PreGet:any)=>TModel;
-}
-//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
-/*IpathControl$*/
-//permite la declaracion de objetos control$ enfocado
-//query especifica de consulta de un doc por medio del
-//_pathDoc que continene todo lo necesario para consultar
-//y monitorear cambios
-export interface IpathControl$<TModel> {
-
-    observables: Observable<TModel | TModel[]>[];
-    subscriptions: Subscription[];
-
-    populateOpc?:{
-        //observable resultante de la union del 
-        //array de observables por medio de MergeAll()
-        //se usa principalmente para la populate
-        //en casos en donde se desee agrupar (merge) todos
-        //los observables correspondientes al array
-        obsMergeAll:Observable<TModel | TModel[]>;  
-
-        listDocsPopulate?:TModel[];
-        limit:number;
-        currentPageNum:number;
-        _pathDocs:string[];
-
-        typePaginate:ETypePaginatePopulate;
-        
-    };
-
-    //las funciones next(), error() (y complete()
-    //opcional) que se ejecutan una suscrito al
-    //observable correspondiente
-    RFS:IRunFunSuscribe<TModel>;
-
-    //contiene el objeto con valores para customizar y enriquecer los 
-    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
-    v_PreGet:any;
-
-    //funcion que se ejecuta antes de entregar los
-    // doc leidos para customizarlos y enriquezerlos
-    preGetDoc:(doc:TModel, v_PreGet:any)=>TModel;
-
-}
-//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
-/*IRunFunSuscribe*/
-//permite construir objetos con las propiedades de tipo funcion
-//que se ejecutan cuando se suscribe cada observable de los
-//objetos control$
-export interface IRunFunSuscribe<TModel>{
-    next: (docsRes: TModel[] | TModel) => void;
-    error: (err:any) => void;
-    complete?:() => void;
-}
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*FSModelService*/
 //es una especie de clase abstracta que no es un servicio (no se inyecta)
-//simplemente intenta complementar de funcionalidad (metodos especialmente) a los
+//simplemente intenta factorizar funcionalidad (metodos especialmente) a los
 //services reales que se usarán, esta clase es padre de todos los services
 // que se dediquen a CRUD de docs de firebase
-//esta tipada con:
+//
+//como los CRUD en general de angular (especialmente las lecturas) usan 
+//la libreria RXjs, se decidio dejar la administracion de lo referente 
+//a observables, subjets, behaviors, subscripciones, en manos de objetos 
+//derivados de la clase   ServiceHandler$  (y sus hijas) y usar  
+//maps diccionarios y keysHandlers para acceder a dichas funcionalidades   
+//
+//Tipado de Clase:
 //
 //TModel:
 //hace referencia a la CLASE modelo generica
 //
-//TIModel:
-//hace referencia a la INTERFAZ modelo generica
-//RECORDAR: la interfaz generica es tambien tipada para extender sus funcionalidades,
-//para este caso TIModedo se espera recibir como TIModelo<any>, ya que es generica.
 //
 //TModel_Meta:
 //Hace referencia los metadatos del modelo
 //
-//TIModel_IQValue:
-//IMPORTANTE: recibe un tipado con sintaxis: TIModel<IQValue_Modelo>
-//Recordar: IQValue_Modelo  tipado especial enfocado a los valores
-//necesarios para construir la query
+//Ifs_FilterModel:
+//tipado que representa el objeto de filtrado COMPLETO 
+//del modelo, aunque para esta clase padre se usara en 
+//la mayoria de ocasiones un   cast   a   Ifs_Filter 
+//(declarado en este mismo archivo) con las propiedades 
+//necesarias a usar dentro de esta clase, por lo demas 
+//Ifs_FilterModel es solo referencial
+
 //================================================================================================================================
-export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
+export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
 
     //================================================================
     /*Propiedades Principales */
     //U_afs:
     //objeto referencial a BD de firestore, el objeto se DEBE DECLARAR
-    //en cada service que herede de esat clase, ya que el  _afs  original
+    //en cada service que herede de esta clase, ya que el  _afs  original
     //es inyectable, y se debe pasar a esta clase como referencia en el
     //constructor del service hijo.
+    //IMPORTANTE: se inicializa en la clase hija Modelservice
     protected U_afs: AngularFirestore;
+
+    //================================================================
+    //IMPORTANTE: esta propiedades DEBEN inicializarse en las clases 
+    //hijas de ModelService
 
     //contiene metadata del modelo
     public Model_Meta:TModel_Meta;
+    //utilidades para el manejo de consultas y docs
+    public _Util:Fs_Util<TModel, TModel_Meta>;
 
+    //contiene una copia para uso interno de los hooks
+    protected hooksInsideService:Fs_HooksService<TModel, TModel_Meta>;
+
+    //================================================================
     //Flag que determina cuando esta listo el servicio para
     //realizar operaciones CRUD
     protected isServiceReady:Boolean;
 
-    //contenedor de objetos control$ de services foraneos
-    //a este service 
-    protected f_Controls$:IControl$<unknown>[];
-    protected f_pathControls$:IpathControl$<unknown>[];
-
     //almacena un limite de docs leidos estandar para TODAS LAS QUERYS,
-    //sin embargo se puede cambiar este numero en la propiedad QFiltro.limite
-    //por default es 50
     protected defaultPageLimit:number;
-
     protected defaultLimitPopulate:number;
 
-    //Control$ generico asignado para este servicio (se usa en servicios donde
-    //no se requiera crear diferentes controls$ para monitorear lecturas, 
-    //solo con este generico bastaria) 
-    public g_Control$:IControl$<TModel>;
-    public g_pathControl$:IpathControl$<TModel>;
+    //los maps diccionarios para almacenar los distintos 
+    //handlers$ (incluso los foraneos)
+    private SMapHandlers$:Map<string, Fs_MServiceHandler$<unknown, unknown>>;
+    private SMapPathHandlers$:Map<string, Fs_MServicePathHandler$<unknown>>;
+
+    //almacena TODOS los servicios foraneos usados en este servicio
+    protected f_services:Fs_ModelService<unknown, unknown, unknown>[];
+
+    //contenedores de keyHandlers  de foraneos que se usan de 
+    //forma auxiliar para este ModelService
+    protected f_keyHandlersOrPathhandlers$:string[];
 
     //================================================================
     //
@@ -279,24 +222,108 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
         this.isServiceReady = false;
         this.defaultPageLimit = 50;
         this.defaultLimitPopulate = 10;
+    
+        this.SMapHandlers$ = new Map<string, Fs_MServiceHandler$<TModel, Ifs_FilterModel>>();
+        this.SMapPathHandlers$ = new Map<string, Fs_MServicePathHandler$<TModel>>();
 
-        this.f_Controls$ = [];
-        this.f_pathControls$ = [];        
+        this.f_keyHandlersOrPathhandlers$ = [];
     }
+
+    //================================================================================================================================    
+    /*createHandler$()*/
+    //crea una handler de acuerdo al tipo de necesidad, lo almacena en el
+    // map diccionario adecuado y retorna una keyHandler almacenado 
+    //en el map
+    //
+    //Argumentos:
+    //
+    //RFS: el objeto con las funciones (next, error y complete) a subscribir 
+    //en los handlers$
+    //
+    //keyHandlerType: determina (y se usa como metadata) para 
+    //determinar el tipo de handler$ que se desea crear
+    //
+    //sourceType: metadata que indica el origen donde se declaro 
+    //la creacion del handler$ su uso es de caracter informativo
+    public createHandler$(        
+        RFS:IRunFunSuscribe<TModel[]> | IRunFunSuscribe<TModel>,
+        keyHandlerType:"Handler" | "PathHandler",
+        sourceType:"Service" | "Component" | "Metadata" | "innerService" | "unknown"  
+    ):string{    
+
+        //construir la keyHandler con la que se identificará el handler$ 
+        //almacenado en el map diccionario
+        const col_Meta = <IMetaColeccion><unknown>this.Model_Meta;
+        let prefixKeyHandler = `${col_Meta.__nomColeccion}-${keyHandlerType}`;
+        let keyHandler = this._Util.createKeyString(prefixKeyHandler, 8);
+
+        let handler$: Fs_MServiceHandler$<TModel, Ifs_FilterModel> | Fs_MServicePathHandler$<TModel>;
+
+        switch (keyHandlerType) {
+            case "Handler":
+                //crea el handler con la metadata
+                handler$ = new Fs_MServiceHandler$<TModel, Ifs_FilterModel>({
+                    keyHandler:keyHandler, 
+                    sourceModel:col_Meta.__nomColeccion, 
+                    sourceType:sourceType
+                });
+                //La primera vez se configura en BHFilter como null
+                handler$.createBehavior(null);
+                handler$.setObservable(this.getObsQueryForHandler(handler$));
+                handler$.addSubscribe("START", RFS as IRunFunSuscribe<TModel[]>);
+                this.SMapHandlers$.set(keyHandler, handler$);   
+                break;
+        
+            case "PathHandler" :
+                //crea el handler con la metadata
+                handler$ = new Fs_MServicePathHandler$<TModel>({
+                    keyHandler:keyHandler, 
+                    sourceModel:col_Meta.__nomColeccion, 
+                    sourceType:sourceType
+                });
+                //La primera vez se configura en BHFilter como null
+                handler$.createBehavior(null);
+                handler$.setObservable(this.getObsQueryPathHandler(handler$));
+                handler$.addSubscribe("START", RFS as IRunFunSuscribe<TModel>);               
+                this.SMapPathHandlers$.set(keyHandler, handler$);
+                break;
+
+            default:
+                keyHandler = undefined;
+                break;
+        }
+        
+        return keyHandler;
+    }
+    //================================================================================================================================    
+    /*getHandlerOrPathHandler$()*/
+    //devuelve el handler almacenado en el map diccionario de los handlers usados
+    //puede servir para agregar funcionalidades adicionales a dicho handler$
+    protected getHandlerOrPathHandler$(
+        keyHandlerOrPathHandler:string
+    ):Fs_MServiceHandler$<unknown, unknown> | Fs_MServicePathHandler$<unknown>{    
+        if (this.isTypeHandler(keyHandlerOrPathHandler, "Handler")) {
+            return this.SMapHandlers$.get(keyHandlerOrPathHandler);
+        }
+        if (this.isTypeHandler(keyHandlerOrPathHandler, "PathHandler")) {
+            return this.SMapPathHandlers$.get(keyHandlerOrPathHandler);
+        }
+        return undefined;
+    }
+
     //================================================================================================================================
     /*ready()*/
     //es un metodo especial que determina (devolviendo una promesa)
-    //cuando el servicio esta listo para realizar consultas (lecturas)
-    //a firestore, SE DEBE encapsular toda consulta (hecha desde un 
-    //service o un component) en la promesa devuelta por este metodo
+    //cuando el servicio esta listo para realizar consultas (lecturas 
+    //y modificaciones) a firestore
+    //cada consulta y modificacion ya esta enlacada a esta promesa asi 
+    //que en el momento inicial que se realice alguna de estas acciones 
+    //se ejecuta este metodo internamente
     public ready():Promise<void>{
-        
-        //almacena la suscripcion de los controls foraneos
-        let f_subsCombine:Subscription
 
         //determinar si ya esta listo el servicio
         //para que sea desactive el monitoreo
-        if (this.isServiceReady) {
+        if (this.isServiceReady == true) {
 
             //simula devolver una promesa pero en
             //realidad esta se ejecuta inmediatamente
@@ -305,45 +332,72 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
         } else {
             return new Promise<void>((resolve, reject)=>{
 
-                //determinar si existen Controls$ foraneos que monitorear
-                //de lo contrario no crear ningun observable combinado
-                if (this.f_Controls$.length > 0 || this.f_pathControls$.length > 0) {
+                //concatena TODO lo referente a handlers foraneos 
+                //o de metadata que se esten usando para este ModelService
+                const meta = <Model_Meta><unknown>this.Model_Meta;
+                this.f_keyHandlersOrPathhandlers$ = this.f_keyHandlersOrPathhandlers$.concat(meta.export_meta__keyHadlersOrPathHandlers$());            
 
-                    //contenedor de todos los observables de control$
-                    //foraneos (sean control$ o pathControl$)
-                    let f_obsMerges:Observable<any>[] = []; 
-                    
-                    //cargar los observables control$ (si los hay)
-                    for (let i = 0; i < this.f_Controls$.length; i++) {
-                        f_obsMerges.push(this.f_Controls$[i].obsMergeAll);
+                //determinar si existen Handlers$ foraneos que monitorear
+                //de lo contrario no crear ningun observable combinado
+                if (this.f_keyHandlersOrPathhandlers$.length > 0 && this.f_services.length > 0) {
+
+                    //contenedor generico para combinar observables
+                    let obss:Observable<unknown>[]=[];
+
+                    for (let i = 0; i < this.f_services.length; i++) {
+
+                        const f_mapH = this.f_services[i].SMapHandlers$;
+                        const f_mapPH = this.f_services[i].SMapPathHandlers$;
+
+                        for (let j = 0; j < this.f_keyHandlersOrPathhandlers$.length; j++) {
+                        
+                            let obs:Observable<unknown>;
+                            
+                            //analizar el tipo de handler y si existe en alguno de los mapas
+                            if (
+                                this.isTypeHandler(this.f_keyHandlersOrPathhandlers$[j], "Handler") &&
+                                f_mapH.has(this.f_keyHandlersOrPathhandlers$[j])
+                            ) {    
+                                // se obtiene el handler foraneo correspondiente y se agrega al map 
+                                //diccionario, tambien se obtiene el mergeAll de los obserbales que
+                                //tenga internos dicho handler  
+                                const h$ = f_mapH.get(this.f_keyHandlersOrPathhandlers$[j]);
+                                this.SMapHandlers$.set(this.f_keyHandlersOrPathhandlers$[j], h$);
+                                obs = h$.getObservableMergeAll(); 
+
+                            }
+                            if (
+                                this.isTypeHandler(this.f_keyHandlersOrPathhandlers$[j], "PathHandler") &&
+                                f_mapPH.has(this.f_keyHandlersOrPathhandlers$[j])
+                            ) {
+                                // se obtiene el pathHandler foraneo correspondiente y se agrega al map 
+                                //diccionario, tambien se obtiene el mergeAll de los obserbales que
+                                //tenga internos dicho pathHandler  
+                                const ph$ = f_mapPH.get(this.f_keyHandlersOrPathhandlers$[j]);
+                                this.SMapPathHandlers$.set(this.f_keyHandlersOrPathhandlers$[j], ph$);
+                                obs = ph$.getObservableMergeAll(); 
+
+                            }
+                            
+                            //almacenar en el contenedor el obs obtenido si existe:
+                            if (obs && obs != null) {
+                                obss.push(obs);    
+                            }                                                
+                        }                        
+                        
                     }
 
-                    //cargar los observables pathControl$ (si los hay)
-                    for (let i = 0; i < this.f_pathControls$.length; i++) {
-                        
-                        if (!this.f_pathControls$[i].populateOpc || 
-                            this.f_pathControls$[i].populateOpc == null
-                        ) {
-                            //si no es poblar, solo agrega el primer observable
-                            f_obsMerges.push(this.f_pathControls$[i].observables[0]);
-                        } else {
-                            //si es poblar agrega el mergeAll() de los observables
-                            f_obsMerges.push(this.f_pathControls$[i].populateOpc.obsMergeAll);
-                        }
-                        
-                    }                    
-
                     //combinar y suscribirse para saber cuando se 
-                    //ejecutaron TODOS los observables de los control$_ext
+                    //ejecutaron TODOS los observables de los handler$_ext
                     // por primera vez (no se tiene en cuenta cuando se 
-                    //crearon cada control$ ya que en ese momento se 
+                    //crearon cada handler$ ya que en ese momento se 
                     //devuelve un empty() como observable, que no es 
                     //detectado por este combineLastest()  )
-                    f_subsCombine = combineLatest(f_obsMerges)                    
+                    let f_subsCombine = combineLatest(obss)                    
                     .subscribe({
                         next:(d)=>{
                             //se desuscribe al momento justo de detectar que 
-                            //ya no hay mas control$_ext que monitorear por primera vez
+                            //ya no hay mas handler$_ext que monitorear por primera vez
                             f_subsCombine.unsubscribe(); 
 
                             this.isServiceReady = true;                    
@@ -355,259 +409,215 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
                     });
 
                 } else {
-                    //si no hay controls$ externos 
-                    //no se puede hacer un monitoreo
-                    this.isServiceReady = true;                    
-                    resolve();                   
+                    //tiempo de espera a que el modulo de firestore este listo          
+                    const t = 10;
+                    setTimeout(() => {
+                        //si no hay controls$ externos 
+                        //no se puede hacer un monitoreo
+                        this.isServiceReady = true;
+                        resolve();                    
+                    }, t);                                  
                 }
             });
         }
-    }
-
-    //================================================================================================================================    
-    /*createPartialControl$()*/
-    //retorna una instancia parcial de control$
-    protected createPartialControl$(
-        RFS:IRunFunSuscribe<TModel>, 
-        preGetDoc:(doc:TModel, v_PreGet:any)=>TModel
-    ):IControl$<TModel>{    
-
-        //preinstanciar el control$a devolver
-        let control$ = <IControl$<TModel>>{
-            behaviors:[],
-            observables:[],
-            subscriptions:[],
-            obsMergeAll:null,
-
-            RFSs:[RFS],
-            preGetDoc:preGetDoc,
-            QFilter:{}
-        };
-
-        //se crean las propiedades referente a los observadores, asignando 
-        //un behavior inicial sin Qfilter ( null )  para que no haga la consulta 
-        //inicial, los monitoreadores behaviors y observables se inicializan 
-        //con el primer elemento del primero del array contenedor
-        control$.behaviors[0] = new BehaviorSubject<IQFilter>(null);
-        control$.observables[0] = this.getObsQueryControl(control$, 0);
-
-        //recordando que subscriptions es un contenedor bidimensional por lo tanto se hace
-        //push a la primera suscripcion encerrada en []
-        control$.subscriptions.push([control$.observables[0].subscribe(control$.RFSs[0])]);
-
-        //este mergeAll() permite agregar funcionalidad externa a
-        //los observales del control$, es ideal para la paginacion full
-        //aqui se asigna inicialmente para cualquier tipo de paginacion,
-        //sin embargo en la paginacion full se estará continueamente actualizando
-        //para agregar los nuevos observadores 
-        control$.obsMergeAll = from(control$.observables).pipe(mergeAll());      
-
-        return control$;
-
-    }
-
-    /*createPartialPathControl$()*/
-    //retorna una instancia parcial de control$
-    protected createPartialPathControl$(
-        RFS:IRunFunSuscribe<TModel>,
-        preGetDoc:(doc:TModel, v_PreGet:any)=>TModel
-    ):IpathControl$<TModel>{   
-
-        //preinstanciar el control$ a devolver     
-        let pathControl$ = <IpathControl$<TModel>>{
-            observables:[],
-            subscriptions:[],            
-
-            RFS:RFS,
-            preGetDoc:preGetDoc
-        };
-
-        //crea un nuevo observador en el index 0, no se requeriran mas observables
-        //pero se hace por array ya que en poblar si se requieren varios observables
-        //
-        //IMPORTANTE: se envia como _pathDoc  un  null  ya que solo se crea inicialmente
-        //el obsebale pero no se desea realizar por ahora ninguna consulta a firestore
-        pathControl$.observables[0] = this.getObsQueryPathControl(pathControl$, null)
-        pathControl$.subscriptions[0] = pathControl$.observables[0].subscribe(pathControl$.RFS);
-
-        return pathControl$;
     }
     
     //================================================================================================================================
     /*METODOS DE LECTURA GENERICA:*/
     //================================================================
-    /* readControl$()*/
-    //es un metodo especial que extrae la mayor parte de la funcionalidad generica
+    /*configHandlerForNewQuery$()*/
+    //es un metodo especial que factoriza la mayor parte de la funcionalidad generica
     //de los metodos de lectura tipo CRUD para firestore, tomando como base la
-    //configuracion preestablecidad en el control$  recibido.
+    //configuracion preestablecidad en el handler$  recibido.
     //RECORDAR:
     //como las lecturas se ejecutan reactivamente con la ayuda de behaviors, toda
     //lectura que se realice se considera <<nueva lectura>> con lo cual se
     //le esta diciendo al behavior que la controla que se le asignará un nuevo filtro.
-    //El metodo readControl() es capaz de detectar si dentro del   control$  su  behavior
-    //(o grupo de behaviors si es paginacion full) es nuevo para configurarlo inicialmente o
-    //si ya se a preestablecido un behavior con su correspondiente next()
     //
-    //Devuelve el control doc$ ya modificado
-    //Parametros:
+    //este tipo de funcionalidad es administrada por el handler$
     //
-    //control$:
-    //SE DEBE RECIBIR el objeto con la configuracion ya preconstruida de behaviors, 
-    //observables, suscriptions y demas propiedades relevantes para construir 
-    //una consulta y su paginacion en firestore
+    //Argumentos:
     //
-    //QFilter:
+    //keyHandler: la kye del handler a usar
+    //
+    //filter:
     //contiene la nueva configuracion correspondiente a la nueva lectura (entre sus propiedades
     //esta el tipo de paginacion, el limite, valQuerys, docInicial, entre otras)
-    //
-    //RFS:
-    //contiene las funciones next() y error() (e incluso si se necesita el complete()) para ejecutar una vez
-    //error-> al igual que next es una funcion que para cargar en el metodo suscribe()
-    //y la cual esat definida en la clase que inyecte este servicio
-    //
-    //path_EmbBase:
-    //solo util para emb_subColecciones y se debe recibir si se desea consultar sin collection group
 
-    protected readControl$(
-        control$:IControl$<TModel>,
-        QFilter:IQFilter,
-        path_EmbBase:string=null
-    ):IControl$<TModel>{
+    protected configHandlerForNewQuery$(
+        keyHandler:string,
+        filter:Ifs_FilterModel,
+    ):void{
 
-        //================================================================
-        //reiniciar todas las propiedades del control$ necesarias para 
-        //cada lectura
+        //determinar si ya esta listo para ejecutar consultas
+        this.ready()
+        .then(()=>{
 
-        //pathCollection:
-        //la configuracion del pathCollection se establece dependiendo si es: 
-        //coleccion o subcoleccion o subcoleccion pero con consulta collectionGroup
-        //Si es coleccion normal:
-        //implicitamente se entiende que path_EmbBase es null y no lo va
-        // a tomar en cuenta.
-        //Si es subcoleccion:
-        //determinar cual de las 2 opciones de query se requiere si la
-        //pathCollection personalizado (tomando en cuenta path_EmbBase que es lo ideal  
-        //y se DEBE RECIBIR path_EmbBase valido ) o a traves del pathCollection estandar de 
-        //la subColeccion (cuando ya se tiene establecido la EXENCION para poder 
-        //usar collectionGroup() (si no se tiene la EXENCION se dispara un error por parte 
-        //de angularfire2))
+            //seleccionar el handler$ a manipular
+            let handler$ = this.SMapHandlers$.get(keyHandler) as Fs_MServiceHandler$<TModel, Ifs_FilterModel>;
 
-        //cast obligado:
-        const col_Meta = <IMetaColeccion><unknown>this.Model_Meta;
-        control$.pathCollection = 
-            (col_Meta.__isEmbSubcoleccion) ?
-            this.getPathCollection(path_EmbBase) :
-            this.getPathCollection();  
+            //cast para usar la interfaz dedicada para Firestore
+            const fs_filter = <Ifs_Filter>filter;
 
-        control$.isCollectionGroup = 
-            (col_Meta.__isEmbSubcoleccion && (!path_EmbBase || path_EmbBase == null)) ? 
-            true : false;     
+            //configurar propiedades que pueden tener valores predefinidos
+            fs_filter.pageNum = (fs_filter.pageNum) ? fs_filter.pageNum: 0;
+            fs_filter.limit = (fs_filter.limit) ? fs_filter.limit: this.defaultPageLimit;
+            fs_filter.startDoc = (fs_filter.startDoc) ? fs_filter.startDoc : null;
+            fs_filter.path_EmbBase = (fs_filter.path_EmbBase) ? fs_filter.path_EmbBase : null;
 
-        //configuracion de filtro y carga de query:
-        control$.QFilter = QFilter;
+            //cast obligado para usar la metadata 
+            const col_Meta = <IMetaColeccion><unknown>this.Model_Meta;
+            
+            //pathCollection:
+            //la configuracion del pathCollection se establece dependiendo si es: 
+            //coleccion o subcoleccion o subcoleccion pero con consulta collectionGroup
+            //Si es coleccion normal:
+            //implicitamente se entiende que path_EmbBase es null y no lo va
+            // a tomar en cuenta.
+            //Si es subcoleccion:
+            //determinar cual de las 2 opciones de query se requiere si la
+            //pathCollection personalizado (tomando en cuenta path_EmbBase que es lo ideal  
+            //y se DEBE RECIBIR path_EmbBase valido ) o a traves del pathCollection estandar de 
+            //la subColeccion (cuando ya se tiene establecido la EXENCION para poder 
+            //usar collectionGroup() (si no se tiene la EXENCION se dispara un error por parte 
+            //de angularfire2)) 
+            //
+            //isCollectionGroup tambien depende de path_EmbBase          
+            fs_filter.pathCollection = 
+                (col_Meta.__isEmbSubcoleccion) ?
+                this._Util.getPathCollection(fs_filter.path_EmbBase) :
+                this._Util.getPathCollection();  
 
-        //configurar propiedades utilitarias:
-        control$.listDocs = [];
-        control$.snapshotStartDocs = [control$.QFilter.startDoc];
-        control$.currentPageNum = 0;
-        control$.accumulatedLimit = control$.QFilter.limit;
+            fs_filter.isCollectionGroup = 
+                (col_Meta.__isEmbSubcoleccion && (!fs_filter.path_EmbBase || fs_filter.path_EmbBase == null)) ? 
+                true : false;     
 
-        //================================================================
+            //configurar el handler con el nuevo filtro
+            handler$.configHandler(fs_filter as Ifs_FilterModel);
 
-        switch (control$.QFilter.typePaginate) {
+            switch (fs_filter.typePaginate) {
 
-            //si se requiere personalizar el inicio de 
-            //cada lectura nueva, es necesario crear los case independientes
-            case ETypePaginate.No:
-            case ETypePaginate.Single:  
-            case ETypePaginate.Accumulative:                          
-                    //================================================================
+                //si se requiere personalizar el inicio de 
+                //cada lectura nueva, es necesario crear los case independientes
+                case ETypePaginate.No:
+                case ETypePaginate.Single:                           
                     //configuracion de lectura para tipo de paginacion: 
-                    //No, Single, Accumulative 
-                    control$.behaviors[0].next(control$.QFilter);
-                    //================================================================
-                break;
+                    //No, Single
+                    handler$.isMultiHandler = false;                        
+                    break;
 
-            case ETypePaginate.Full:
-                    //================================================================
-                    //configuracion de lectura para paginacion full
+                case ETypePaginate.Accumulative:
+                    //configuracion de lectura para tipo de paginacion: 
+                    handler$.isMultiHandler = false;  
+                    //asignar el limite acumulativo
+                    handler$.accumulatedLimit = fs_filter.limit;
+                    break;
 
-                    //al ser una nueva lectura se debe asegurar de reinicializar TODOS 
-                    //los bhaviors observables y suscrptions que se hubieren usado 
-                    //en este control$ en anteriores lecturas
-                    //tambien asegurarse que los array esten con el mismo tamaño
-                    if (control$.behaviors.length == control$.subscriptions.length) {
+                case ETypePaginate.Full:
+                    //para la paginacion full si se usa multihandlers$
+                    handler$.isMultiHandler = true;
+                    break;
 
-                        //conteo decremental mientras elimina los behaviors y
-                        //suscripciones que ya no se necesitan puesto que es
-                        //una lectura nueva, tener en cuenta que el primer
-                        //behavior y suscripcion NO SE ELIMINAN
-                        while (control$.subscriptions.length > 1) { //garantiza que el primero no se elimina
-                            
-                            for (let i = 0; i < control$.subscriptions[control$.behaviors.length - 1].length; i++) {
-                                control$.subscriptions[control$.behaviors.length - 1][i].unsubscribe();                                
-                            }
-                            //control$.subscriptions[control$.behaviors.length - 1].unsubscribe();
-                            control$.subscriptions.pop();
-                            control$.observables.pop();
-                            control$.behaviors.pop()
-                        }
+                default:
+                    break;
+            }
 
-                        //cargar el nuevo filtro en el primer behavior
-                        control$.behaviors[0].next(control$.QFilter);
+            //cargar la nueva consulta con eel nuevo filtro preconfigurado
+            handler$.nextFilterBh(fs_filter as Ifs_FilterModel);
 
-                        //actualiza en obsMergeAll ya que se debe eliminar todo rastro de la lectura pasada
-                        control$.obsMergeAll = from(control$.observables).pipe(mergeAll());   
+            return;
 
-                    }
-                    //================================================================
-                break;
+        })
+        .catch((error)=>{
+            throw error;            
+        })
+    }
 
-            default:
-                break;
-        }
+    //================================================================================================================================
+    /*configPathHandlerForNewQuery$()*/
+    //metodo especial solo usado para cargar nueva
+    //lectura con el unico query de buscar por _pathDoc
+    //y devolver SOLO UN doc o null
+    //
+    //Argumentos
+    //
+    //keyPathHandler: la key del pathHAndler a usar
+    //
+    //_pathDoc:
+    //en este metodo NO SE REQUIERE un pathColeccion ya que este metodo apunta a leer un documento
+    //por medio de un _pathDoc en el cual explicitamente va incluido el pathColeccion (incluso puede
+    //ir el path de una coleccion y de varias subcolecciones dependiendo de que tan profundo
+    //este el doc), por lo tanto se pasa un _pathDoc con el formato:
+    //"/NomColeccion/{id}/nomSubColeccion/{id}..../nomSubColeccion_N/{_id_N}"
+    //(RECORDAR:siempre debe terminar el _pathDoc en un _id)
+    //
+    protected configPathHandlerForNewQuery$(
+        keyPathHandler:string,
+        _pathDoc: string
+    ):void {
+        //determinar si ya esta listo para ejecutar consultas
+        this.ready()
+        .then(()=>{
 
-        return control$;
+            //seleccionar el handler$ a manipular
+            let pathHandler$ = this.SMapPathHandlers$.get(keyPathHandler) as Fs_MServicePathHandler$<TModel>;
+
+            pathHandler$.isPopulateHandler = false;
+            pathHandler$.configPathHandler(_pathDoc, [], ETypePaginatePopulate.No);
+            pathHandler$.nextFilterBh(_pathDoc);
+
+            return;
+        })
+        .catch((error)=>{
+            throw error;            
+        });
     }
 
     //================================================================
-    /*getObsQueryControl():*/
+    /*getObsQueryForHandler():*/
     //configura y devuelve el observable encargado monitorear la ultima lectura
-    //Parametros:
-    //control$:
-    //el control que contiene el array de behaviors para crear el observable
     //
-    //idxBehavior:
-    //Especifica el index del behaior al cual se le creará un observable
-    //(es indispensable cunado se usa paginacion full, en las demas siempre es 0)
-    private getObsQueryControl(
-        control$:IControl$<TModel>, 
-        idxBehavior:number
+    //Argumentos:
+    //
+    //handler$: el handler$ previamente seleccionado que contiene las propiedades
+    //globales para administrar y construiri el observable
+    //
+    private getObsQueryForHandler(
+        handler$:Fs_MServiceHandler$<TModel, Ifs_FilterModel>
     ): Observable<TModel[]> {
-        //el pipe y el switchMap cambiar el observable dinamicamente cada vez que se
-        //requiera un nuevo filtro por medio de control$.behaviors.next()
-        return control$.behaviors[idxBehavior]
-            .pipe(switchMap((QFilter) => {
 
-                //================================================
+        //internamente se autogestiona para devolver el behavior actual
+        const behavior = handler$.getBehavior();
+
+        //el pipe y el switchMap cambiar el observable dinamicamente cada vez que se
+        //requiera un nuevo filtro por medio de handler$.behaviors.next()
+        const Obs = behavior
+            .pipe(switchMap((BhFilter) => {
+
+                //cast para usar la interfaz de Firestore
+                const fs_BhFilter = <Ifs_Filter>BhFilter;
+
                 //Determina si no existe filtro de Query para ignorar
                 // la busqueda (puede darse cuando se requiere solo 
                 //instanciar el observable al inicio )
-                if (!QFilter || QFilter == null) {
-                    //devuelve un observable vacio
-                    //empy() permite que los observables
-                    //asociados ignoren el evento cuando
-                    //se crea el control$
-                    return empty();  
+                if (!fs_BhFilter || fs_BhFilter == null) {
+                    if (this.isServiceReady == false) {
+                        //devuelve un observable vacio
+                        //empy() permite que los observables
+                        //asociados ignoren el evento cuando
+                        //se crea el handler$
+                        return empty();                        
+                    } else {
+                        return of([]);
+                    }
                 }
-                //================================================
+
                 //idxPag almacena un indice dinamico de la pagina a la
                 //que corresponde el observable (su uso es indispensable
                 //para la paginacion full)
-                let idxPag = control$.currentPageNum;
-                //================================================
+                let idxPag = handler$.currentPageNum;
 
-                //================================================================
+                //================================================
                 //configuracion inicial para la lectura de docs en OPCION COLECCION
                 //debe ya ESTAR ASIGNADO el valor de la porpiedad _pathColeccion
                 //antes de solicitar la consulta
@@ -617,414 +627,329 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
                 //la query para ser enviada a firestore
 
                 try {
-                    let afsColQuery = (!control$.isCollectionGroup) ?
-                        this.U_afs.collection(control$.pathCollection, (ref) => control$.QFilter.query(ref))
+                    let afsColQuery = (!fs_BhFilter.isCollectionGroup) ?
+                        this.U_afs.collection(fs_BhFilter.pathCollection, (ref) => fs_BhFilter.query(ref, BhFilter))
                         :
-                        this.U_afs.collectionGroup(control$.pathCollection, (ref) => control$.QFilter.query(ref));
+                        this.U_afs.collectionGroup(fs_BhFilter.pathCollection, (ref) => fs_BhFilter.query(ref, BhFilter));
 
                     return afsColQuery
-                    .snapshotChanges()  //devuelve docs y metadata
-                    .pipe(
-                        map(actions => {
-                            //================================================================
-                            //aqui se manipulan los docs que se reciben de la coleccion despues
-                            //de la consulta, siempre se recibe un array llamado   actions
-                            //al cual se le ejecuta un  .map() (de la clase array) para procesar
-                            //los docs uno a uno (este procesamiento por ahora es opcional solo
-                            //lo realizo por que en la documentacion oficial lo colocan o por si
-                            //en algun momento requiereo un procesamiento especifico de cada
-                            //documento leido (como por ejemplo si se usa un _id automatico
-                            //de firestore))
-                            //
-                            //IMPORTANTE: *COMPORTAMIENTO EXTRAÑO*
-                            //por alguna razon cuando modifico el filtro del behavior (para una
-                            //nueva consulta o cuando creo un nuevo behavior(en el caso de la
-                            //paginacion full)), el observable se dispara entregando docs no
-                            //solicitados (normalmente es el ultimo doc de la coleccion pero
-                            //como es un comportamiento inesperado puede que entregue cualquier
-                            //cosa) y luego si entrega los docs solicitados, es importante tener
-                            // en cuenta lo anterior ya que el codigo que se ejecute aqui
-                            //(normalmente la administracion de la paginacion) y el codigo que
-                            //se ejecute en los metodos next() de los RFS, debe anticipar este
-                            //comportamiento y no asumir que los docs que entrega inmediatamente
-                            //son los solicitados y tiene que esperar hasta la ULTIMA ENTREGA
-                            //la cual si son los docs solicitados.
-                            let docsLeidos = actions.map(a => {
-                                let data = a.payload.doc.data() as TModel;
-                                //const _id = a.payload.doc.id; //se puede omitri si uso ids personalizados
-                                
+                        .snapshotChanges()  //devuelve docs y metadata
+                        .pipe(
+                            map(actions => {
                                 //================================================================
-                                //ejecutar la funcion preGetDoc para customizar los datos
-                                //de acuerdo a las necesidades
-                                data = control$.preGetDoc(data, control$.QFilter.v_PreGet);
-                                //================================================================
-                                return data;
-                                //return { _id, ...data };
-                                
-                            });
-                            //================================================================
-                            //determina la forma en que se entregaran los datos de acuerdo
-                            //a si se deben paginar y que tipo de paginacion (estandar o full)
-                            switch (control$.QFilter.typePaginate) {
-                                case ETypePaginate.No:
-                                        //--falta---
-                                        control$.listDocs = docsLeidos;
-                                    break;
+                                //aqui se manipulan los docs que se reciben de la coleccion despues
+                                //de la consulta, siempre se recibe un array llamado   actions
+                                //al cual se le ejecuta un  .map() (de la clase array) para procesar
+                                //los docs uno a uno (este procesamiento por ahora es opcional solo
+                                //lo realizo por que en la documentacion oficial lo colocan o por si
+                                //en algun momento requiereo un procesamiento especifico de cada
+                                //documento leido (como por ejemplo si se usa un _id automatico
+                                //de firestore))
+                                //
+                                //IMPORTANTE: *COMPORTAMIENTO EXTRAÑO*
+                                //por alguna razon cuando modifico el filtro del behavior (para una
+                                //nueva consulta o cuando creo un nuevo behavior(en el caso de la
+                                //paginacion full)), el observable se dispara entregando docs no
+                                //solicitados (normalmente es el ultimo doc de la coleccion pero
+                                //como es un comportamiento inesperado puede que entregue cualquier
+                                //cosa) y luego si entrega los docs solicitados, es importante tener
+                                // en cuenta lo anterior ya que el codigo que se ejecute aqui
+                                //(normalmente la administracion de la paginacion) y el codigo que
+                                //se ejecute en los metodos next() de los RFS, debe anticipar este
+                                //comportamiento y no asumir que los docs que entrega inmediatamente
+                                //son los solicitados y tiene que esperar hasta la ULTIMA ENTREGA
+                                //la cual si son los docs solicitados.
+                                let docsLeidos = actions.map(a => {
+                                    let data = a.payload.doc.data() as TModel;
+                                    //const _id = a.payload.doc.id; //se puede omitri si uso ids personalizados
 
-                                case ETypePaginate.Single:
-                                        if (docsLeidos.length > 0) {
-                                            //este es un documento especial entregado por firestore
-                                            //que se debe usar para los metodos starAt() o starAfter
-                                            //en las querys a enviar en firestore
-                                            const snapShotDoc = actions[actions.length - 1].payload.doc
-                                            //como es paginacion estandar solo se requiere la pagina actual
-                                            control$.snapshotStartDocs[control$.currentPageNum + 1] = snapShotDoc;
-                                            
-                                        }
-                                        control$.listDocs = docsLeidos;
+                                    //================================================================
+                                    //ejecutar la funcion preGetDoc para customizar los datos
+                                    //de acuerdo a las necesidades, doc a doc
+                                    data = this.hooksInsideService.preGetDoc(data);
+                                    //================================================================
+                                    return data;
+                                    //return { _id, ...data };
+
+                                });
+                                //================================================================
+                                //determina la forma en que se entregaran los datos de acuerdo
+                                //a si se deben paginar y que tipo de paginacion (estandar o full)
+                                switch (fs_BhFilter.typePaginate) {
+                                    case ETypePaginate.No:
+                                        //--falta---
+                                        handler$.listDocs = docsLeidos;
+                                        break;
+
+                                    case ETypePaginate.Single:
+                                        //administrar los snapshot
+                                        handler$ = this.updateSnapShotsDocs(handler$, actions, handler$.currentPageNum);
+
+                                        handler$.listDocs = docsLeidos;
                                         //------------------------[EN CONSTRUCCION]------------------------
                                         //falta si se quiere conservar los docs leidos
                                         //anteriormente pero no monitoriados por observables
                                         //docsLeidos = doc$.listDocs.concat(docsLeidos);
                                         //----------------------------------------------------------------
 
-                                    break;
+                                        break;
 
-                                case ETypePaginate.Accumulative:
+                                    case ETypePaginate.Accumulative:
                                         //-falta---
-                                        control$.listDocs = docsLeidos;
-                                    break;
+                                        handler$.listDocs = docsLeidos;
+                                        break;
 
-                                case ETypePaginate.Full:
-                                        //si no hubo datos leidos no cargue el documento especial
-                                        if (docsLeidos.length > 0) {
-                                            //este es un documento especial entregado por firestore
-                                            //que se debe usar para los metodos starAt() o starAfter
-                                            //en las querys a enviar en firestore
-                                            const snapShotDoc = actions[actions.length - 1].payload.doc
-                                            //el idxPag el control especial que cada observable creado tiene asignado
-                                            control$.snapshotStartDocs[idxPag + 1] = snapShotDoc;
-                                        }
-                                        //================================================================
-                                        //doc$.listDocs, contiene una copia de TODOS los docs monitoriados
-                                        //de TODOS los observables que se han creado para la paginacion full.
-                                        //
-                                        //se intenta dividir el doc$.listDocs en 2 arrays independientes
-                                        //iniListDocsParcial ,  finListDocsParcial ; para que ne el medio
-                                        //sea concatenado los docs de la nueva pagina, (teniendo en cuenta
-                                        //que la division no se hace cuando  doc$.listDocs esta vacio o cuando
-                                        //se esta detectando la ultima pagina); esto se logra por medio del
-                                        //idxPag que permite calcular el idx de particion.
-                                        let iniIdxSeccion = idxPag * control$.accumulatedLimit;
-                                        let finIdxSeccion = (idxPag + 1) * control$.accumulatedLimit;
+                                    case ETypePaginate.Full:
+                                        //administrar los snapshots
+                                        handler$ = this.updateSnapShotsDocs(handler$, actions, idxPag);
 
-                                        let iniListDocsParcial: TModel[] = [];
-                                        let finListDocsParcial: TModel[] = [];
+                                        //reconstruir el contenedor listDocs del manejador
+                                        handler$ = this.reBuildListDocsByPaginatedFull(handler$, fs_BhFilter, docsLeidos, idxPag);
 
-                                        if (control$.listDocs.length >= iniIdxSeccion) {
-                                            iniListDocsParcial = control$.listDocs.slice(0, iniIdxSeccion);
-                                        }
-                                        if (control$.listDocs.length >= finIdxSeccion) {
-                                            finListDocsParcial = control$.listDocs.slice(finIdxSeccion);
-                                        }
-                                        //================================================================
-                                        //se re-arma doc$.listDocs con los nuevos docs (o con las modificaciones)
-                                        //recordando que este codigo se ejecuta ya se por que se realizó una nueva
-                                        //consulta o por que el observable detecto alguna modificacion de algun doc
+                                        //administrar exceso de memoria:
+                                        handler$ = this.reduceMemoryByPaginated(handler$, fs_BhFilter);
 
-                                        const lsD = iniListDocsParcial.concat(docsLeidos).concat(finListDocsParcial);
-                                        if (lsD.length > 0) {
-                                            control$.listDocs = this.eliminarItemsDuplicadosArray(lsD, "_id"); //-- solo para _id personalizados
-                                        } else {
-                                            control$.listDocs = [];
-                                        }
-                                        //================================================================
-                                        //administracion de memoria de observables para la paginacion reactiva full
-                                        //desuscribe los observables que no estan siendo utilizados, ya que cada vez
-                                        //que exista una modificacion en algun documento (especificamente eliminacion)
-                                        //puede darse el caso que se hallan eliminado muchos docs lo cual dejaria 1 o
-                                        //mas observables monitoriando  vacios []  , para evitar esto este fragmento
-                                        //de codigo analiza si existen observables que esten rastreando   vacios[]
-                                        //y los desuscribe y elimina
+                                        docsLeidos = handler$.listDocs;
+                                        break;
 
-                                        //determinar si la cantidad de docs rastreados por pagina es
-                                        //inferior a la cantidad de paginas representada en numPaginaActual
-                                        //(que a su vez son obserbales), de ser asi indica que existen
-                                        //observables que rastrean vacios y se deben desuscribir y eliminar
-
-                                        let pagRealEntero = (control$.listDocs.length / control$.QFilter.limit) + 1;
-                                        let pagActualEntero = control$.currentPageNum + 1;
-
-                                        //para dejar almenos el ultimo observable vacio 
-                                        //monitoreando se usa comparador   >   pero si se 
-                                        //quiere ser estricto se debe usar   >=  
-                                        if (pagActualEntero > pagRealEntero) { 
-
-                                            //el diferencial determina cuantos observables de mas estan rastreando vacios
-                                            let diferencialExcesoMemoria = Math.floor(pagActualEntero / pagRealEntero);
-                                            for (let i = 0; i < diferencialExcesoMemoria; i++) {
-
-                                                //liberar memoria de obserbables rastreando vacios uno a uno
-                                                //----------------[EN CONSTRUCCION]----------------
-                                                const countSubscrip = control$.subscriptions[control$.subscriptions.length - 1].length;
-                                                for (let i = 0; i < countSubscrip; i++) {
-                                                    control$.subscriptions[control$.subscriptions.length - 1][i].unsubscribe();                                                    
-                                                }
-                                                //------------------------------------------------
-                                                //control$.subscriptions[control$.subscriptions.length - 1].unsubscribe();
-                                                
-                                                control$.subscriptions.pop();
-                                                control$.observables.pop();
-                                                control$.behaviors.pop();
-                                                control$.snapshotStartDocs.pop();
-
-                                                control$.currentPageNum--;
-                                                
-                                            }
-                                            //reiniciar los mergeAll despues d eliberar memoria
-                                            control$.obsMergeAll = from(control$.observables).pipe(mergeAll());   
-                                        }
-                                        //================================================================
-                                        docsLeidos = control$.listDocs;
-                                    break;
-
-                                default:
-                                    break;
-                            }
-                            //================================================================
-                            return docsLeidos;
-                        })
-                    );         
+                                    default:
+                                        break;
+                                }
+                                //================================================================
+                                return docsLeidos;
+                            })
+                        );
                 } catch (error) {
                     console.log(error);
                 }
-               
+
                 //================================================================
-            }))
+            }));
+
+        return Obs;
     }
 
-    //================================================================================================================================
-    /*readPathControl$()*/
-    //metodo especial solo usado para cargar nueva
-    //lectura con el unico query de buscar por _pathDoc
-    //y devolver SOLO UN doc o null
-    //Parametros
-    //
-    //pathDoc$:
-    //contiene el control$ con la configuracion base (o null si es por primera vez),este control$
-    //contiene el observable, suscription y demas propiedades para rastrear el doc a leer
-    //
-    //RFS:
-    //contiene las funciones next() y error() (e incluso si se necesita el complete()) para ejecutar una vez
-    //error-> al igual que next es una funcion que para cargar en el metodo suscribe()
-    //y la cual esat definida en la clase que inyecte este servicio
-    //
-    //v_PreGet:
-    //contiene el objeto con valores para customizar y enriquecer los 
-    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
-    //
-    //preGetDocs:
-    //funcion que se ejecuta antes de entregar los
-    // doc leidos para customizarlos y enriquezerlos
-    //
-    //_pathDoc:
-    //en este metodo NO SE REQUIERE un pathColeccion ya que este metodo apunta a leer un documento
-    //por medio de un _pathDoc en el cual explicitamente va incluido el pathColeccion (incluso puede
-    //ir el path de una coleccion y de varias subcolecciones dependiendo de que tan profundo
-    //este el doc), por lo tanto se pasa un _pathDoc con el formato:
-    //"/NomColeccion/{id}/nomSubColeccion/{id}..../nomSubColeccion_N/{_id_N}"
-    //(RECORDAR:siempre debe terminar el _pathDoc en un _id)
-    protected readPathControl$(
-        pathControl$:IpathControl$<TModel>,
-        v_PreGet:any,
-        preGetDoc:(doc:TModel, v_PreGet:any)=>TModel,
-        _pathDoc: string = null
-    ): IpathControl$<TModel> {
-
-        //================================================================
-        //inicializar todas las propiedades del pathControl$
-        //necesarias para  la lectura
-        pathControl$.v_PreGet = v_PreGet;
-        pathControl$.preGetDoc = preGetDoc;
-        pathControl$.populateOpc = undefined; //no es poblar
-
-        //desactiva la anterior suscripcion para establecer la nueva
-        pathControl$.subscriptions[0].unsubscribe();
-
-        //================================================================        
-        //crea un nuevo observador en el index 0, no se requeriran mas observables
-        //pero se hace por array ya que en poblar si se requieren varios observables
-        pathControl$.observables[0] = this.getObsQueryPathControl(pathControl$, _pathDoc)
-        pathControl$.subscriptions[0] = pathControl$.observables[0].subscribe(pathControl$.RFS);
-
-        return pathControl$;
-    }
     //================================================================
     /*getObservableQueryDocPathId*/
     //configura y devuelve el observable encargado monitorear la ultima
     //lectura este metodo es de acceso rapido para consultar SOLO UN DOCUMENTO
     //por medio de su _id
-    private getObsQueryPathControl(pathControl$:IpathControl$<TModel>, _pathDoc:string): Observable<TModel | TModel[]> {
+    //
+    //Argumentos:
+    //
+    //handler$: el handler$ previamente seleccionado que contiene las propiedades
+    //globales para administrar y construiri el observable
+    private getObsQueryPathHandler(
+        handler$:Fs_MServicePathHandler$<TModel>
+    ): Observable<TModel | TModel[]> {
 
-        //================================================
-        //Determina si no existe _pathDoc de Query para ignorar
-        // la busqueda (puede darse cuando se requiere solo 
-        //instanciar el obserbale al inicio )
-        if (!_pathDoc || _pathDoc==null) {
-            //devuelve un observablde de array de TModel vacio
-            return of(null) as Observable<TModel | TModel[]>;
-        }
-        //================================================
-        //solo para la opcion de poblar, el index NO es .length-1
-        let idxObs = pathControl$.observables.length;
-        //================================================
-        //a diferencia de getObservableQueryDoc() aqui la consulta es mas sencilla
-        //no se requiere configuracion de query externa, la consulta se hace a base
-        //de documento y no de coleccion y no se requiere obtener metadata especial
-        //de firestore como snapShotDocument (a no ser que se requiera el _id automatico 
-        //de firestore o requiera un documento snapShot)
-        const doc_afs = <AngularFirestoreDocument<TModel>>this.U_afs.doc<TModel>(_pathDoc);
-        return doc_afs.valueChanges().pipe(map(doc => {
+        // internamente se autogestiona para devolver el behavior actual
+        let behavior = handler$.getBehavior(); 
 
-            //determinar si NO es un poblar:
-            if (!pathControl$.populateOpc) {
-                return pathControl$.preGetDoc(doc, pathControl$.v_PreGet);
-            }
-            //ejecutar la funcion preGetDocs para customizar los datos
-            //de acuerdo a las necesidades
-            pathControl$.populateOpc.listDocsPopulate[idxObs] = pathControl$.preGetDoc(doc, pathControl$.v_PreGet);
-            return pathControl$.populateOpc.listDocsPopulate;
-        }));
+        const Obs = behavior 
+        .pipe(
+            switchMap((pathDoc)=>{
+                if (!pathDoc || pathDoc==null) {
+                    if (this.isServiceReady == false) {
+                        //devuelve un observable vacio
+                        //empy() permite que los observables
+                        //asociados ignoren el evento cuando
+                        //se crea el handler$
+                        return empty();                        
+                    }
+                    if (handler$.isPopulateHandler == false){
+                        return of(null);
+                    }else{
+                        return of([]);
+                    }
+                }
+                //a diferencia de getObservableQueryDoc() aqui la consulta es mas sencilla
+                //no se requiere configuracion de query externa, la consulta se hace a base
+                //de documento y no de coleccion y no se requiere obtener metadata especial
+                //de firestore como snapShotDocument (a no ser que se requiera el _id automatico 
+                //de firestore o requiera un documento snapShot)
+                const doc_afs = <AngularFirestoreDocument<TModel>>this.U_afs.doc<TModel>(pathDoc);
+                let cursor_afs_Obs = doc_afs.valueChanges() as Observable<TModel | TModel[]>;
+                
+                //determinar si se usa como populate
+                if (handler$.isPopulateHandler == false) {
+                    
+                    cursor_afs_Obs = cursor_afs_Obs
+                    .pipe(map(doc => {
+                        return this.hooksInsideService.preGetDoc(doc as TModel);
+                    }));
 
-        //en caso de requerir metadata:
-        // return doc_afs.snapshotChanges().pipe(map(actions=>{
-        //     const doc = actions.payload.data() as TModelo
-        //     //aqui.... procesar metadata.....
-        //     //determinar si es un poblar:
-        //     if (!pathDoc$.opcPopulate) {
-        //         return doc as TModelo;                    
-        //     }
-        //     pathDoc$.opcPopulate.docPopulateList[idxObs] = doc as TModelo;
-        //     return pathDoc$.opcPopulate.docPopulateList;
-        // }));  
+                    return cursor_afs_Obs;
+                }else{
+                    //================================================
+                    //acumulará dinamicamente el idx del pathDoc que 
+                    //se esta rastreando, su valor será asignado al 
+                    //momento de obtener el doc (o null si no 
+                    //encuentra el doc)                    
+                    let idxPopulate: number = handler$.idxBhPathPopulate;
+
+                    cursor_afs_Obs = cursor_afs_Obs
+                    .pipe(map(doc => {
+
+
+                        doc = this.hooksInsideService.preGetDoc(doc as TModel);
+                        handler$.listPopulateDocs[idxPopulate] = doc;  
+                        
+                        //determina si se leyo un null para cerrar ese handler$ ya 
+                        //que indica que el doc al que hace referencia el _pathDoc 
+                        //ya fue eliminado
+                        if (handler$.listPopulateDocs[idxPopulate] == null) {
+                            handler$ = this.reducememoryByPopulate(handler$, idxPopulate);                                    
+                        }
+
+                        let docsRes = this._Util.deleteDocsNullForArray(handler$.listPopulateDocs);
+                        return docsRes
+
+                    }));
+
+                    //actualizar el idxBhPathPopulate para un nuevo populate
+                    handler$.idxBhPathPopulate++;
+
+                    return cursor_afs_Obs;
+                }
+                //en caso de requerir metadata:
+                // return doc_afs.snapshotChanges().pipe(map(actions=>{
+                //     const doc = actions.payload.data() as TModelo
+                //     //aqui.... procesar metadata.....
+                //     //determinar si es un poblar:
+                //     if (!pathDoc$.opcPopulate) {
+                //         return doc as TModelo;                    
+                //     }
+                //     pathDoc$.opcPopulate.docPopulateList[idxObs] = doc as TModelo;
+                //     return pathDoc$.opcPopulate.docPopulateList;
+                // }));  
+            })
+        );
+
+        return Obs;
     }
 
     //================================================================================================================================
-    /*paginteControl$()*/
+    /*paginate$()*/
     //este metodo determina el tipo de paginacion y ejecuta una
     //consulta especial con el filtro modificado solo para paginacion
-    //Parametros:
     //
-    //doc$:
-    //contiene el control$ con la configuracion base (o null si es por primera vez),este control$
-    //contiene los behaviors, observables, suscriptions y demas propiedades para rastrear los docs a leer
+    //Argumento:
+    //
+    //keyHandler:el key para seleccionar el handler$ a usar
     //
     //direccionPaginacion:
     //un string con 2 opciones "previo" | "siguiente", algunos tipos de paginacion solo soportan "siguiente"
-    protected paginteControl$(
-        control$:IControl$<TModel>,
+    public paginate$(
+        keyHandler:string,
         pageDirection: "previousPage" | "nextPage"
-    ):IControl$<TModel>{
+    ):void{
+        //determinar si ya esta listo para ejecutar consultas
+        this.ready()
+        .then(()=>{
 
-        //para paginar basta con tener el filtro del
-        //ultimo behavior activo )
-        const idxUltimoBh = control$.behaviors.length - 1;
-        const QFiltro = control$.behaviors[idxUltimoBh].getValue();
+            //seleccionar handler a manipular:
+            let handler$ = this.SMapHandlers$.get(keyHandler) as Fs_MServiceHandler$<TModel, Ifs_FilterModel>;
 
-        switch (control$.QFilter.typePaginate) {
-            case ETypePaginate.No:
-                 //NO SE PAGINA
-                break;
+            //para paginar basta con tener el filtro del
+            //ultimo behavior activo, 
+            let BhFilter = handler$.getBhFilter();
 
-            case ETypePaginate.Single:
-                    //================================================================
-                    //la paginacion reactiva Simple tiene la opcion de tener
-                    //pagina siguiente y anterior y en cada opcion solo es necesario
-                    //pasar el filtro con la configuracion para paginar por medio del
-                    //metodo next() y actualizar el numero de la pagia actual
-                    if (pageDirection == "nextPage" &&
-                        control$.listDocs.length == QFiltro.limit) {
+            //clonar superficialmente el filtro
+            let fs_BhFilter = <Ifs_Filter> Object.assign({}, BhFilter);
 
-                        QFiltro.startDoc = control$.snapshotStartDocs[control$.currentPageNum + 1];
-                        control$.behaviors[0].next(QFiltro);
-                        control$.currentPageNum++;
-                    }
-                    if (pageDirection == "previousPage" &&
-                        control$.listDocs.length > 0 && control$.currentPageNum > 0) {
+            switch (fs_BhFilter.typePaginate) {
+                case ETypePaginate.No:
+                    handler$.isMultiHandler = false;
+                    //NO SE PAGINA
+                    break;
 
-                        QFiltro.startDoc = control$.snapshotStartDocs[control$.currentPageNum - 1];
-                        control$.behaviors[0].next(QFiltro);
-                        control$.currentPageNum--;
-                    }
-                    //================================================================
+                case ETypePaginate.Single:
+                        //la paginacion reactiva Simple tiene la opcion de tener
+                        //pagina siguiente y anterior y en cada opcion solo es necesario
+                        //pasar el filtro con la configuracion para paginar por medio del
+                        //metodo next() y actualizar el numero de la pagia actual
+                        if (pageDirection == "nextPage" &&
+                            handler$.listDocs.length == fs_BhFilter.limit) {
 
-                break;
-
-            case ETypePaginate.Accumulative:
-                    //================================================================
-                    //la paginacion reactiva Acumulativa SOLO  tiene la opcion de tener
-                    //paginar siguiente y solo es necesario pasar el filtro con la
-                    //configuracion para paginar por medio del metodo next() y actualizar
-                    // el numero de la pagina actual
-                    //Tambien para poder paginar siguiente es necesario que la cantidad
-                    //de docs almacenados en doc$.listDocs sea igual doc$.limiteAcumulado
-                    //ya que si es inferior se deduce que no es necesario seguir
-                    //solicitando mas docs
-                    if (pageDirection == "nextPage" &&
-                        control$.listDocs.length == control$.accumulatedLimit) { //RECORDAR:es control$.accumulatedLimit y no QFiltro.limit
-
-                        //actualizar el limite acumulado
-                        control$.accumulatedLimit += QFiltro.limit;
-                        QFiltro.limit = control$.accumulatedLimit;
-                        control$.behaviors[0].next(QFiltro);
-                        control$.currentPageNum++; //llevar este contador de pagina para este caso es opcional
-                    }
-                break;
-
-            case ETypePaginate.Full:
-                    //la paginacion reactiva full solo puede ser pagina siguiente
-                    if (pageDirection == "nextPage") {
-
-                        //se determina el limite del lote de documento que deben leerse antes
-                        //de autorizar la creacion de un nuevo behavior y una suscripcion
-                        //multiplicando la paginas actuales por el limite por pagina
-                        //para autorizar es necesario que sea igual el limiteLote
-                        //con la cantidad real de documentos leidos hasta el momento
-                        let limiteLote = (control$.currentPageNum + 1) * QFiltro.limit;
-                        if (control$.listDocs.length == limiteLote) {
-
-                            QFiltro.startDoc = control$.snapshotStartDocs[control$.currentPageNum + 1];
-                            control$.currentPageNum++;
-                            control$.behaviors.push(new BehaviorSubject<IQFilter>(QFiltro));
-                            control$.observables.push(this.getObsQueryControl(control$, control$.behaviors.length - 1));
-                            
-                            //--------[EN CONSTRUCCION]--------
-                            let acumSuscriptions:Subscription[]=[];
-                            for (let i = 0; i < control$.RFSs.length; i++) {
-                                acumSuscriptions.push(control$.observables[control$.observables.length - 1].subscribe(control$.RFSs[i]));                              
-                            }
-                            control$.subscriptions.push(acumSuscriptions)                            
-                            //--------------------------------
-
-                            //control$.subscriptions.push(control$.observables[control$.observables.length - 1].subscribe(control$.RFSs));
-
-                            //actualizar la propiedad control$.obsMergeAll es importante 
-                            //para este tipo de paginacion
-                            //por cada pagina nueva se hace un nuevo mergeAll de todos los
-                            //observables en el array
-                            control$.obsMergeAll = from(control$.observables).pipe(mergeAll());                              
+                            handler$.isMultiHandler = false;
+                            //asigna el ultimo snapshotDocument para paginar apartir de ese doc
+                            fs_BhFilter.startDoc = handler$.snapshotStartDocs[handler$.currentPageNum + 1];
+                            handler$.nextFilterBh(fs_BhFilter as Ifs_FilterModel);
+                            handler$.currentPageNum++;
                         }
-                    }
-                break;
+                        if (pageDirection == "previousPage" &&
+                            handler$.listDocs.length > 0 && handler$.currentPageNum > 0) {
 
-            default:
-                break;
-        }
+                            handler$.isMultiHandler = false;
+                            //asigna el ultimo snapshotDocument para paginar apartir de ese doc
+                            fs_BhFilter.startDoc = handler$.snapshotStartDocs[handler$.currentPageNum - 1];
+                            handler$.nextFilterBh(fs_BhFilter as Ifs_FilterModel);
+                            handler$.currentPageNum--;
+                        }
+                        
+                    break;
 
-        return control$;
+                case ETypePaginate.Accumulative:
+                        //la paginacion reactiva Acumulativa SOLO  tiene la opcion de tener
+                        //paginar siguiente y solo es necesario pasar el filtro con la
+                        //configuracion para paginar por medio del metodo next() y actualizar
+                        // el numero de la pagina actual
+                        //Tambien para poder paginar siguiente es necesario que la cantidad
+                        //de docs almacenados en doc$.listDocs sea igual doc$.limiteAcumulado
+                        //ya que si es inferior se deduce que no es necesario seguir
+                        //solicitando mas docs
+                        if (pageDirection == "nextPage" &&
+                            handler$.listDocs.length == handler$.accumulatedLimit) { //RECORDAR:es handler$.accumulatedLimit y no QFiltro.limit
+
+                            //actualizar el limite acumulado
+                            handler$.isMultiHandler = false;
+                            //actualiza el limite acumulado y lo asigna al nuevo filtro
+                            handler$.accumulatedLimit += fs_BhFilter.limit;
+                            fs_BhFilter.limit = handler$.accumulatedLimit;
+
+                            handler$.nextFilterBh(fs_BhFilter as Ifs_FilterModel);
+                            handler$.currentPageNum++; //llevar este contador de pagina para este caso es opcional
+                        }
+                    break;
+
+                case ETypePaginate.Full:
+                        //la paginacion reactiva full solo puede ser pagina siguiente
+                        if (pageDirection == "nextPage") {
+
+                            //se determina el limite del lote de documento que deben leerse antes
+                            //de autorizar la creacion de un nuevo behavior y una suscripcion
+                            //multiplicando la paginas actuales por el limite por pagina
+                            //para autorizar es necesario que sea igual el limiteLote
+                            //con la cantidad real de documentos leidos hasta el momento
+                            let limiteLote = (handler$.currentPageNum + 1) * fs_BhFilter.limit;
+                            if (handler$.listDocs.length == limiteLote) {
+
+                                handler$.isMultiHandler = true;
+                                fs_BhFilter.startDoc = handler$.snapshotStartDocs[handler$.currentPageNum + 1];
+                                handler$.currentPageNum++;
+                                
+                                //crea el nuevo handler en el contenedor
+                                handler$.createBehavior(fs_BhFilter as Ifs_FilterModel);
+                                handler$.setObservable(this.getObsQueryForHandler(handler$));
+                                handler$.addSubscribe(null, null);
+
+                            }
+                        }
+                    break;
+
+                default:
+                    break;
+            }
+            return
+        })
+        .catch((error)=>{
+            throw error;            
+        });
     }
+
     //================================================================================================================================
-    /*populateControl$()*/
+    /*populate$()*/
     //permite el poblar documentos refernciado en campos con 
     //prefijo  fk_  que almacenan rutas _pathDoc de este modelo
     //este metodo se usa como paso intermedio en caso de desear
@@ -1032,9 +957,8 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //
     //Parametros:
     //
-    //pathControl$:
-    //objeto control$ con la configuracion de observables y subscriciones
-    //que se usen para poblar
+    //keyPathHandler:
+    //el key que selecciona el handler$a usar
     //
     //fk_pathDocs:
     //contiene el o los strings de _pathDoc que hacen referencia a otros documentos
@@ -1042,823 +966,738 @@ export class FSModelService<TModel, TIModel, TModel_Meta, TIModel_IQValue> {
     //coleccion en modo 1a1 o 0a1, si es un array indica que el campo fk_ esta 
     //relacionado con otra coleccion como  0aMuchos o 1aMuchos 
     //
-    //v_PreGet:
-    //contiene el objeto con valores para customizar y enriquecer los 
-    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
-    //se pude recibir un null
-    //
-    //preGetDoc:
-    //funcion que se ejecuta antes de entregar los
-    //doc leidos para customizarlos y enriquezerlos
-    //
     //typePaginatePopulate:
     //por medio de la enum  ETypePaginatePopulate  determina
-    //el tipo de paginacion a usar para poblar el pathControl$
+    //el tipo de paginacion a usar para poblar el pathhandler$
     //
     //limitPopulate:
     //si se desea un limite personalizado para la paginacion de poblar
-    protected populateControl$(
-        pathControl$: IpathControl$<TModel>,
-        fk_pathDocs: string | string[],        
-        v_PreGet:any,
-        preGetDoc:(doc:TModel, v_PreGet:any)=>TModel,
-        typePaginatePopulate:ETypePaginatePopulate,
-        limitPopulate?:number
-    ): IpathControl$<TModel> {
+    public populate$(
+        keyPathHandler:string,
+        fk_pathDocs: string | string[],
+        typePaginatePopulate?:ETypePaginatePopulate,       
+        limitPopulate:number = this.defaultLimitPopulate,
+    ):void{
 
+        //determinar si ya esta listo para ejecutar consultas
+        this.ready()
+        .then(()=>{
 
-        //­­­___ <TEST> _____________________________________
-        //New:
+            //cast
+            fk_pathDocs = (Array.isArray(fk_pathDocs)) ? fk_pathDocs : [fk_pathDocs];
 
-        //se analiza si es un pathControl$ ya usado para reiniciarlo
-        if (pathControl$.observables.length > 0 &&
-            pathControl$.subscriptions.length > 0
-        ) {
-            //desusbscripcion factorizada:
-            //ideal para reiniciar un poblar o paginarlo en modo single
-            pathControl$ = <IpathControl$<TModel>>FSModelService.unsubscribePartialPathControl$(pathControl$);
-        }
+            //configurar el tipo de paginacion deseada
+            typePaginatePopulate = (typePaginatePopulate)? typePaginatePopulate : ETypePaginatePopulate.Single;
 
-        //seguro para determinar que si el _pathDocs NO es un array
-        //se active automaticamente la   ETypePaginatePopulate.No  
-        //eliminando cualquier tipo de programacion previamente programado
-        typePaginatePopulate = (Array.isArray(fk_pathDocs)) ?
-            typePaginatePopulate :
-            ETypePaginatePopulate.No;
+            //seleccionar el handler a manipular
+            let pathHandler$ = this.SMapPathHandlers$.get(keyPathHandler) as Fs_MServicePathHandler$<TModel>;
 
-        //se reinicia las opciones de populate para este pathControl$
-        pathControl$.populateOpc = {
-            _pathDocs : (Array.isArray(fk_pathDocs)) ? fk_pathDocs : [fk_pathDocs],
-            limit: (limitPopulate) ? limitPopulate : this.defaultLimitPopulate ,
-            currentPageNum: 0, //no se pagina hasta que se hallan cargado
-            listDocsPopulate: [],
-            obsMergeAll:null,
-            typePaginate:typePaginatePopulate
-        };
+            pathHandler$.configPathHandler(null, fk_pathDocs,typePaginatePopulate,limitPopulate);            
 
-        //comienza la creacion de los observables y su correspondiente subscripcion
-        //se analiza que se creen tantos como el   limit  y  la cantidad de   _pathDocs
-        //lo permitan
-        while (
-            pathControl$.populateOpc._pathDocs.length > 0 &&
-            pathControl$.populateOpc.limit > pathControl$.subscriptions.length &&
-            pathControl$.populateOpc._pathDocs.length > pathControl$.subscriptions.length             
-        ) {
+            let idxIni = 0;
+            let size = (pathHandler$._pathPopulateDocs.length >= pathHandler$.limitPopulate) ?
+                        pathHandler$.limitPopulate : pathHandler$._pathPopulateDocs.length;
+            let populateFilter = pathHandler$._pathPopulateDocs.slice(idxIni, size);
 
-            const idx_sub_obs = pathControl$.subscriptions.length;
-            pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, pathControl$.populateOpc._pathDocs[idx_sub_obs]));
-            pathControl$.subscriptions.push(pathControl$.observables[idx_sub_obs].subscribe(pathControl$.RFS));
-        }
+            //crear todos los NUEVOS populateHandlers$ a usar (sean o no acumulados)
+            for (let i = 0; i < populateFilter.length; i++) {
+                
+                pathHandler$.createBehavior(populateFilter[i]);
+                pathHandler$.setObservable(this.getObsQueryPathHandler(pathHandler$));
+                
+                //se deben asignar los RFS y idSubscribe previamente 
+                //configurados (eso lo hace el metodo internamente)
+                pathHandler$.addSubscribe(null, null); 
+            }
+            return
 
-        pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
-
-        //________________________________________________
-        //Old:
-
-        // //================================================
-        // //convertir (si es necesario) _pathDocs en array
-        // _pathDocs = (Array.isArray(_pathDocs)) ? _pathDocs : [_pathDocs];
-
-        // //================================================================
-        // //verificar si NO existe un pathControl$  anterior con configuracion 
-        // //previa de  populateOpc  lo cual indica que es inicial
-        // if (!pathControl$.populateOpc || pathControl$.populateOpc == null) {
-
-        //     //================================================================
-        //     //inicializar todas las propiedades del pathControl$
-        //     //necesarias para el poblar       
-        //     pathControl$.v_PreGet = v_PreGet;
-        //     pathControl$.preGetDoc = preGetDoc;
-        //     pathControl$.populateOpc = {
-        //         obsMergeAll: null,
-        //         limit: limitePopulate,
-        //         currentPageNum: 0, //no se pagina hasta que se hallan cargado
-        //         listDocsPopulate: [],
-        //         _pathDocs: _pathDocs
-        //     };
-
-        //     while (
-        //         pathControl$.populateOpc._pathDocs.length > 0 &&
-        //         pathControl$.populateOpc._pathDocs.length > pathControl$.observables.length &&
-        //         pathControl$.populateOpc.limit > pathControl$.observables.length
-        //     ) {
-
-        //         const i = pathControl$.observables.length;
-        //         pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, _pathDocs[i]));
-        //         pathControl$.suscriptions.push(pathControl$.observables[i].subscribe(pathControl$.RFS));
-        //     }
-
-        //     pathControl$.populateOpc.currentPageNum++;
-
-        //     pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
-
-        // } else {
-        //     const limiteLote = pathControl$.populateOpc.limit * pathControl$.populateOpc.currentPageNum;
-        //     if (pathControl$.observables.length == limiteLote &&
-        //         pathControl$.populateOpc._pathDocs.length > limiteLote) {
-
-        //         while (pathControl$.populateOpc._pathDocs.length > pathControl$.observables.length &&
-        //             (pathControl$.populateOpc.limit + limiteLote) > pathControl$.observables.length
-        //         ) {
-
-        //             const i = pathControl$.observables.length;
-        //             pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, _pathDocs[i]));
-        //             pathControl$.suscriptions.push(pathControl$.observables[i].subscribe(pathControl$.RFS));
-        //         }
-
-        //         pathControl$.populateOpc.currentPageNum++;
-
-        //         pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
-        //     }
-        // }
-        // //================================================================
-        //________________________________________________
-                   
-        return pathControl$;
+        })
+        .catch((error)=>{
+            throw error;            
+        });
     }
 
-    /*pagitanePopulateControl$()*/
+    /*pagitanePopulatehandler$()*/
     //es para paginacion basica de populate, por ahora solo redirecciona
-    //al metodo principal pagitanePopulateControl$(), aqui se uede implementar
+    //al metodo principal pagitanePopulatehandler$(), aqui se uede implementar
     //logica personalizada para cada paginacion, si se desea
     //
     //Parametros:
-    //pathControl$:
-    //el objeto contrl$ con los observables y suscripciones de cada
-    //populate
+    //pathhandler$:
+    //el key para seleccionar el handler$ a usar
     //
     //pageDirection
     // las 2 opciones de direccion de paginar (no en todos los 
     //typePaginate se pueden usar)
-    protected pagitanePopulateControl$(
-        pathControl$:IpathControl$<TModel>,
+    public pagitanePopulate$(
+        keyPathHandler:string,
         pageDirection: "previousPage" | "nextPage"
-    ):IpathControl$<TModel>{
+    ):void{
+        //determinar si ya esta listo para ejecutar consultas
+        this.ready()
+        .then(()=>{
 
-        if (!pathControl$.populateOpc) {
-            return pathControl$;
-        }
+            //seleccionar el handler a manipular
+            let pathHandler$ = this.SMapPathHandlers$.get(keyPathHandler) as Fs_MServicePathHandler$<TModel>;
 
-        switch (pathControl$.populateOpc.typePaginate) {
-            
-            
-            case ETypePaginatePopulate.No:                
-                break;
+            //el tamaño total de los _pathDocs a poblar
+            const size_pathPopulateDocs = pathHandler$._pathPopulateDocs.length;
 
-            case ETypePaginatePopulate.Single:
+            //contendrá el parcial de los _pathDocs a filtrar y paginar
+            let populateFilter:string[];   
 
-                //pagina anterior
-                if (pageDirection == "previousPage" &&
-                    pathControl$.subscriptions.length == pathControl$.observables.length &&
-                    pathControl$.populateOpc._pathDocs.length > 0 &&
-                    pathControl$.populateOpc.currentPageNum > 0 //el control de paginas se realiza con logica desde 0
-                ) {
-                    //const utilitarias:
-                    const limit = pathControl$.populateOpc.limit;
-                    const currentPage = pathControl$.populateOpc.currentPageNum;   
-                    const numPathDocs = pathControl$.populateOpc._pathDocs.length;
-                    //desusbscripcion factorizada:
-                    //ideal para reiniciar un poblar o paginarlo en modo single
-                    pathControl$ = <IpathControl$<TModel>>FSModelService.unsubscribePartialPathControl$(pathControl$);
+            switch (pathHandler$.typePaginatePopulate) {
 
-                    //los nuevos observables y sus correspondientes subscripciones
-                    //son asignados en lotes de acuerdo al   limit  que se halla configurado
-                    //RECORDAR:
-                    //en este tipo de paginacion los index de los observables y subscriptions 
-                    //NO corresponden al orden del array   _pathDocs para permitir la navegacion 
-                    //de nextpage y previouspage
-                    //
-                    //se declaran los index de inicio y fin  en que se asignara
-                    //los nuevos observables y sus correspondientes subscripciones
-                    let idx_pathDoc = (currentPage-1) * limit;
-                    const end_idx_pathDoc = currentPage * limit;
-                    while (idx_pathDoc < end_idx_pathDoc && idx_pathDoc < numPathDocs) {
+                case ETypePaginatePopulate.No:
+                    break;
 
-                        const idx_sub_Obs = pathControl$.subscriptions.length;
-                        pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, pathControl$.populateOpc._pathDocs[idx_sub_Obs]));
-                        pathControl$.subscriptions.push(pathControl$.observables[idx_sub_Obs].subscribe(pathControl$.RFS));
-                        
-                        idx_pathDoc++;
-                    }
-                    
-                    //se agrupan los observables con un mergeAll, para propositos generales
-                    pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
+                case ETypePaginatePopulate.Single:
 
-                    //se actualiza el numero de pagina actual (recordar que es con logica 0)
-                    pathControl$.populateOpc.currentPageNum--;
-
-                }
-
-                if (pageDirection == "nextPage" && 
-                    pathControl$.subscriptions.length == pathControl$.observables.length &&
-                    pathControl$.populateOpc._pathDocs.length > (pathControl$.populateOpc.limit * pathControl$.populateOpc.currentPageNum)
-                ) {
-
-                    //const utilitarias:
-                    const limit = pathControl$.populateOpc.limit;
-                    const currentPage = pathControl$.populateOpc.currentPageNum;   
-                    const numPathDocs = pathControl$.populateOpc._pathDocs.length;
-
-                    //desusbscripcion factorizada:
-                    //ideal para reiniciar un poblar o paginarlo en modo single
-                    pathControl$ = <IpathControl$<TModel>>FSModelService.unsubscribePartialPathControl$(pathControl$);
-
-                    //los nuevos observables y sus correspondientes subscripciones
-                    //son asignados en lotes de acuerdo al   limit  que se halla configurado
-                    //RECORDAR:
-                    //en este tipo de paginacion los index de los observables y subscriptions 
-                    //NO corresponden al orden del array   _pathDocs para permitir la navegacion 
-                    //de nextpage y previouspage
-                    //
-                    //se declaran los index de inicio y fin  en que se asignara
-                    //los nuevos observables y sus correspondientes subscripciones                    
-                    let idx_pathDoc = currentPage * limit;
-                    const end_idx_pathDoc = (currentPage+1) * limit;
-                    while (idx_pathDoc < end_idx_pathDoc && idx_pathDoc < numPathDocs) {
-
-                        const idx_sub_Obs = pathControl$.subscriptions.length;
-                        pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, pathControl$.populateOpc._pathDocs[idx_sub_Obs]));
-                        pathControl$.subscriptions.push(pathControl$.observables[idx_sub_Obs].subscribe(pathControl$.RFS));
-                        
-                        idx_pathDoc++;
-                    }
-                    
-                    //se agrupan los observables con un mergeAll, para propositos generales
-                    pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
-
-                    //se actualiza el numero de pagina actual (recordar que es con logica 0)
-                    pathControl$.populateOpc.currentPageNum++;
-                }
-                break;      
-                
-            case ETypePaginatePopulate.Accumulative:
-
-                if (pageDirection == "nextPage" &&
-                    pathControl$.populateOpc._pathDocs.length > pathControl$.populateOpc.limit * pathControl$.populateOpc.currentPageNum
-                ) {
-                    //const utilitarias:
-                    const limit = pathControl$.populateOpc.limit;
-                    const currentPage = pathControl$.populateOpc.currentPageNum;   
-                    const numPathDocs = pathControl$.populateOpc._pathDocs.length;
-                    const accumulativeLimit = limit * currentPage;
-        
-                    //los nuevos observables y sus correspondientes subscripciones
-                    //son asignados al final del array correspondiente de forma acumulativa
-                    //hasta determinar que no sobrepasen el limite acumulativo o  la cantidad
-                    //de _pathDocs   que existan 
-                    //RECORDAR:
-                    //en este tipo de paginacion los index de los observables y subscriptions 
-                    //SI corresponden al orden del array   _pathDocs 
-                    while (pathControl$.subscriptions.length < accumulativeLimit &&
-                        pathControl$.subscriptions.length < numPathDocs
+                    //pagina anterior
+                    if (pageDirection == "previousPage" &&
+                        size_pathPopulateDocs > 0 &&
+                        pathHandler$.currentPageNum > 0 //el control de paginas se realiza con logica desde 0
                     ) {
-                        const idx_sub_Obs = pathControl$.subscriptions.length;
-                        pathControl$.observables.push(this.getObsQueryPathControl(pathControl$, pathControl$.populateOpc._pathDocs[idx_sub_Obs]));
-                        pathControl$.subscriptions.push(pathControl$.observables[idx_sub_Obs].subscribe(pathControl$.RFS));
+
+                        //garantizar que no tenga desborde de elementos almacenados en el 
+                        //contenedor populateHandlers$, esto puede darse si por algun motivo 
+                        //durante la paginacion se cambio de una paginacion Full a una sencilla
+                        //si se llega a dar este caso es necesario cerrar el exceso de elementos
+                        if (pathHandler$.limitPopulate < pathHandler$.getSizeContainerHandlers$()) {
+                            pathHandler$.closeContainerHandlers$(pathHandler$.limitPopulate);
+                        }
+
+                        //extrae solo los _pathDocs que se rastrearan en esta pagina
+                        populateFilter = this.getPartial_pathDocsForPaginate(pathHandler$, pageDirection);
+
+                        //comprobar que el contenedor containerHandlers$ tenga suficientes handlers 
+                        //para realizar la paginacion, de lo contrario es necesario crear los que 
+                        //hagan falta
+                        if (populateFilter.length > pathHandler$.getSizeContainerHandlers$()) {
+
+                            //diff indica los faltantes
+                            const diff = populateFilter.length - pathHandler$.getSizeContainerHandlers$();
+                            for (let i = 0; i < diff; i++) {
+                                pathHandler$.createBehavior(null);
+                                pathHandler$.setObservable(this.getObsQueryPathHandler(pathHandler$));
+                                pathHandler$.addSubscribe(null, null);
+                            }
+                        }
+
+                        //por ser paginacion Single se debe 
+                        //reiniciar el contenedor de salida y elidx
+                        pathHandler$.idxBhPathPopulate = 0;
+                        pathHandler$.listPopulateDocs = [];
+
+                        //ejecutar el filtrado de paginacion
+                        pathHandler$.nextFilterBh(populateFilter);
+
+                        pathHandler$.currentPageNum--;
+
+                    }
+                    //pagina siguiente
+                    if (pageDirection == "nextPage" &&
+                        size_pathPopulateDocs > (pathHandler$.limitPopulate * pathHandler$.currentPageNum)
+                    ) {
+
+                        //garantizar que no tenga desborde de elementos almacenados en el 
+                        //contenedor populateHandlers$, esto puede darse si por algun motivo 
+                        //durante la paginacion se cambio de una paginacion Full a una sencilla
+                        //si se llega a dar este caso es necesario cerrar el exceso de elementos
+                        if (pathHandler$.limitPopulate < pathHandler$.getSizeContainerHandlers$()) {
+                            pathHandler$.closeContainerHandlers$(pathHandler$.limitPopulate);
+                        }
+
+                        //extrae solo los _pathDocs que se rastrearan en esta pagina
+                        populateFilter = this.getPartial_pathDocsForPaginate(pathHandler$, pageDirection);
+
+                        //comprobar que el containerHandlers$ NO tenga exceso de handlers 
+                        //para realizar la paginacion, de lo contrario es necesario cerrar
+                        if (populateFilter.length < pathHandler$.getSizeContainerHandlers$()) {
+                            pathHandler$.closeContainerHandlers$(populateFilter.length);
+                        }
+
+                        //por ser paginacion Single se debe 
+                        //reiniciar el contenedor de salida 
+                        //y el idx
+                        pathHandler$.idxBhPathPopulate = 0;
+                        pathHandler$.listPopulateDocs = [];
+
+                        //ejecutar el filtrado de paginacion
+                        pathHandler$.nextFilterBh(populateFilter);;
+
+                        pathHandler$.currentPageNum++;
+                    }
+                    break;
+
+                case ETypePaginatePopulate.AccumulativePasive:
+                        //pagina siguiente
+                        if (pageDirection == "nextPage" &&
+                        size_pathPopulateDocs > (pathHandler$.limitPopulate * pathHandler$.currentPageNum)
+                        ) {
+
+                        //garantizar que no tenga desborde de elementos almacenados en el 
+                        //contenedor populateHandlers$, esto puede darse si por algun motivo 
+                        //durante la paginacion se cambio de una paginacion Full a una sencilla
+                        //si se llega a dar este caso es necesario cerrar el exceso de elementos
+                        if (pathHandler$.limitPopulate < pathHandler$.getSizeContainerHandlers$()) {
+                            pathHandler$.closeContainerHandlers$(pathHandler$.limitPopulate);
+                        }
+
+                        //extrae solo los _pathDocs que se rastrearan en esta pagina
+                        populateFilter = this.getPartial_pathDocsForPaginate(pathHandler$, pageDirection);
+
+                        //ejecutar el filtrado de paginacion
+                        pathHandler$.nextFilterBh(populateFilter);;
+
+                        pathHandler$.currentPageNum++;
+                    }
+                    break;
+
+                case ETypePaginatePopulate.Full:
+
+                    if (pageDirection == "nextPage" &&
+                        size_pathPopulateDocs > (pathHandler$.limitPopulate * pathHandler$.currentPageNum)
+                    ) {
+
+                        //extrae solo los _pathDocs que se rastrearan en esta pagina
+                        populateFilter = this.getPartial_pathDocsForPaginate(pathHandler$, pageDirection);
+
+                        //crear todos los NUEVOS populateHandlers$ a usar 
+                        for (let i = 0; i < populateFilter.length; i++) {
+                            
+                            //de una vez los carga con el filtro
+                            pathHandler$.createBehavior(populateFilter[i]);
+                            pathHandler$.setObservable(this.getObsQueryPathHandler(pathHandler$));
+                            pathHandler$.addSubscribe(null, null);
+                        }
+
+                        pathHandler$.currentPageNum++;
                     }
 
-                    pathControl$.populateOpc.obsMergeAll = from(pathControl$.observables).pipe(mergeAll());
+                    break;
 
-                    pathControl$.populateOpc.currentPageNum++;
-                }                
+                default:
+                    break;
+            }
 
-                break;                     
-        
-            default:
-                break;
+            return
+
+        })
+        .catch((error)=>{
+            throw error;            
+        });
+    }
+
+    //================================================================================================================================
+    /*getId$()*/
+    //refactorizacion de este metodo para realizar consultas de 
+    //tipo collection (no Document)para cualquier model
+    //
+    //Parametros:
+    //
+    protected getId$(
+        keyHandler:string,
+        _id:string,
+        path_EmbBase:string = null,
+    ):void{
+
+        //configurar tipo de paginacion deseada:
+        const typePaginate =  ETypePaginate.No;
+
+        //Configurar la query de esta lectura:
+        //esta query es una funcion que se cargará al behavior como filtro 
+        //al momento de que este se ejecute
+        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, BhFilter:unknown) => {
+
+            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+            //================================================================
+            //Query Condiciones:
+            cursorQueryRef = cursorQueryRef.where("_id", "==", _id);            
+            //================================================================
+            //no se requiere paginar            
+            return cursorQueryRef;
+        };   
+
+        const VQuery = <Ifs_Filter>{
+            query,
+            typePaginate,
+            path_EmbBase,
+            limit:1,
+            pageNum:0,
+            startDoc:null
         }
 
-        return pathControl$;
+        this.configHandlerForNewQuery$(keyHandler, VQuery as Ifs_FilterModel);
+        
+        return ;
+    }
+
+    //================================================================================================================================
+    /*getBy_pathDoc$()*/
+    //permite consultar un solo doc siempre y cuando se tenga el path_id
+    public getBy_pathDoc$(
+        keyPathHandler:string,       
+        _pathDoc: string | null
+    ):void{
+        this.configPathHandlerForNewQuery$(keyPathHandler,  _pathDoc);
+        return
     }
     //================================================================================================================================
+    /*create()*/
+    //refactoriza el metodo create de todos los servicios para firestore
+    //
+    //Argumentos:
+    //
+    //newDoc : el nuevo docuemnto a crear
+    //
+    //path_EmbBase: si es una subcoleccion
+    protected create(
+        newDoc: TModel, 
+        path_EmbBase: string 
+    ): Promise<void> {
 
-    protected createDocFS(newDoc: TModel, pathCollection:string): Promise<void> {
+        newDoc = this.hooksInsideService.preModDoc(newDoc, true, false, path_EmbBase); 
+
         const _id = newDoc["_id"]; //esto para ids personalizados
-        const refColletion = this.U_afs.collection<TModel>(pathCollection);
-        return refColletion.doc(_id).set(newDoc, { merge: true });
+        const path_afs =this._Util.getPathCollection(path_EmbBase);
+        const refColletion = this.U_afs.collection<TModel>(path_afs);
+
+        //encadeno la modificacion de la coleccion a la promesa de ready()
+        return this.ready()
+        // .then(() => {
+        //     //espera por modificaciones pendientes
+        //     return this.U_afs.firestore.waitForPendingWrites();
+        // })
+        .then(() => {    
+            return refColletion.doc(_id).set(newDoc, { merge: true });
+        })        
+        .then(() => {
+            //ejecutar el postMod (si existe)
+            this.hooksInsideService.postModDoc(newDoc, true);
+            return;
+        });
     }
 
-    protected updateDocFS(updatedDoc: TModel, pathCollection:string): Promise<void> {
+    /*update()*/
+    //refactoriza el metodo update de todos los servicios para firestore
+    //
+    //Argumentos:
+    //
+    //updatedDoc : el documento a actualizar
+    //
+    //isStrongUpdate : si se desea sobre escribir los campos 
+    //Map completamente en la coleccion, predefinido esta 
+    //false ya que esta si no se usa con precaucion puede 
+    //eliminar toda la informacion de los campos map por 
+    //error 
+    //
+    //path_EmbBase: si es una subcoleccion
+    protected update(
+        updatedDoc: TModel,
+        isStrongUpdate = false,
+        path_EmbBase: string  
+    ): Promise<void> {
+
+        updatedDoc = this.hooksInsideService.preModDoc(updatedDoc, false, isStrongUpdate, path_EmbBase);
+
         const _id = updatedDoc["_id"]; //esto para ids personalizados
-        const refColletion = this.U_afs.collection<TModel>(pathCollection);
-        return refColletion.doc(_id).update(updatedDoc);
+        const refColletion = this.U_afs.collection<TModel>(this._Util.getPathCollection(path_EmbBase));
+
+        //encadeno la modificacion de la coleccion a la promesa de ready()
+        return this.ready()
+        // .then(() => {
+        //     //espera por modificaciones pendientes
+        //     return refColletion.ref.firestore.waitForPendingWrites();
+        // })        
+        .then(()=>{
+            return refColletion.doc(_id).update(updatedDoc)
+        })
+        .then(() => {
+            //ejecutar el postMod (si existe)
+            this.hooksInsideService.postModDoc(updatedDoc, false);
+            return;
+        });
     }
 
-    protected deleteDocFS(_id: string, pathCollection:string): Promise<void> {
-        const refColletion = this.U_afs.collection<TModel>(pathCollection);
-        return refColletion.doc(_id).delete();
-    }
+    /*delete()*/
+    //refactoriza el metodo delete de todos los servicios para firestore
+    //
+    //Argumentos:
+    //
+    //_id el _id del documento a eliminar
+    //
+    //path_EmbBase: si es una subcoleccion
+    protected delete(
+        _id: string, 
+        path_EmbBase: string 
+    ): Promise<void> {
 
+        _id = this.hooksInsideService.preDeleteDoc(_id);
+
+        const refColletion = this.U_afs.collection<TModel>(this._Util.getPathCollection(path_EmbBase));
+
+        //encadeno la modificacion de la coleccion a la promesa de ready()
+        return this.ready()
+        // .then(() => {
+        //     //espera por modificaciones pendientes
+        //     return refColletion.ref.firestore.waitForPendingWrites();
+        // })
+        .then(()=>{
+            return refColletion.doc(_id).delete()
+        })
+        .then(() => {
+            //ejecutar el postDelete (si existe)
+            this.hooksInsideService.postDeleteDoc(_id);
+            return;
+        });
+    }
+    
     //================================================================
     /*metodos de desuscripcion de observables*/
     //para ahorrar memoria, se usa tipado unknown para recibir cualquier
-    //control$ sea externo o interno al service
+    //handler$ sea externo o interno al service
 
-    //estos metodos estaticos y reciben controls$ tipo unknown
-    //para permitir desuscribir varios control$ agrupados en array 
-    //de diferentes servicios
-    public static unsubscribeControl$(controls$:IControl$<unknown>[]):void {
-                
-        if (controls$.length == 0) {
-            return; //si docs$ esta vacio no ejecutar nada   
-        }
-
-        for (let i = 0; i < controls$.length; i++) {
-            while (controls$[i].subscriptions.length > 0) {
-                //--------[EN CONSTRUCCION]--------
-                const countSubscrip = controls$[i].subscriptions.length;
-                for (let i = 0; i < countSubscrip; i++) {
-                    controls$[i].subscriptions[controls$[i].behaviors.length - 1][i].unsubscribe();
-                }
-                //--------------------------------
-                //controls$[i].subscriptions[controls$[i].behaviors.length - 1].unsubscribe();
-                
-                controls$[i].subscriptions.pop();
-                controls$[i].observables.pop();
-                controls$[i].behaviors.pop();
-            }
-            //No deja docs almacenados:
-            controls$[i].listDocs = [];                    
-        }
-        return;
-    }
-
-    public static unsubscribePathControl$(pathControls$:IpathControl$<unknown>[]):void {
-
-        if (pathControls$.length == 0) {
-            return; //si pathDocs$ esta vacio no ejecutar nada   
-        }
-
-        for (let i = 0; i < pathControls$.length; i++) {
-
-            //desusbscripcion factorizada:
-            pathControls$[i] = FSModelService.unsubscribePartialPathControl$(pathControls$[i]);
-
-            //No deja docs almacenados si es poblar:
-            if (pathControls$[i].populateOpc) {
-                pathControls$[i].populateOpc = undefined; 
-            }              
-        }       
-        return;
-    }
-
-    /*unsubscribePartialPathControl$()*/
-    //metodo especial que factoriza parte de la desubscripcion 
-    //de un pathControl$ para facilitar la utilizacion cuando 
-    //se requiere populate o en la desubscripcion estandar
-    //Parametros:
+    /*closeHandlers$()*/
     //
-    private static unsubscribePartialPathControl$(
-        pathControl$:IpathControl$<unknown>
-    ):IpathControl$<unknown>{
+    //Parametros:
+    //keyHandlers: las key de los handlers a desuscribir, cerrar y eliminar
+    public closeHandlersOrPathHandlers$(
+        keyHandlersOrkeyPathHandlers:string | string[]
+    ):void{
 
-        //conteo decremental mientras elimina los observables y
-        //suscripciones que ya no se necesitan 
-        // SE ELMINAN TODOS
-        while (pathControl$.observables.length > 0) {
-            pathControl$.subscriptions[pathControl$.observables.length - 1].unsubscribe();
-            pathControl$.subscriptions.pop();
-            pathControl$.observables.pop();
-        }        
+        //determinar si no existe keys que cerrar
+        if (!keyHandlersOrkeyPathHandlers || (Array.isArray(keyHandlersOrkeyPathHandlers) && keyHandlersOrkeyPathHandlers.length == 0)) {
+            return
+        }
 
-        return pathControl$;
-    }
+        //contenedores selectivos para los tipos de key
+        let allKeysHandlers$:string[]=[];
+        let allKeysPathHandlers$:string[]=[];
 
+        for (let i = 0; i < keyHandlersOrkeyPathHandlers.length; i++) {
+            if (this.isTypeHandler(keyHandlersOrkeyPathHandlers[i], "Handler")) {
+                allKeysHandlers$.push(keyHandlersOrkeyPathHandlers[i]);
+            }
+            if (this.isTypeHandler(keyHandlersOrkeyPathHandlers[i], "PathHandler")) {
+                allKeysPathHandlers$.push(keyHandlersOrkeyPathHandlers[i]);
+            }
+            
+        }
 
-    public unsubscribe_g_Control$():void{
-        FSModelService.unsubscribeControl$([this.g_Control$]);
-    }
+        //desuscribe los handlers Seleccionados
+        if(allKeysHandlers$.length > 0){
+            for (let i = 0; i < allKeysHandlers$.length; i++) {                
+                if (this.SMapHandlers$.has(allKeysHandlers$[i])) {
+                    const handler$ = this.SMapHandlers$.get(allKeysHandlers$[i]);
+                    handler$.closeAllHandlers$(handler$);
+                    this.SMapHandlers$.delete(allKeysHandlers$[i]);
+                }                
+            }
+        }
 
-    public unsubscribe_g_pathControl$():void{
-        FSModelService.unsubscribePathControl$([this.g_pathControl$]);
+        if(allKeysPathHandlers$.length > 0){
+            for (let i = 0; i < allKeysPathHandlers$.length; i++) {                
+                if (this.SMapPathHandlers$.has(allKeysPathHandlers$[i])) {
+                    const Pathhandler$ = this.SMapPathHandlers$.get(allKeysPathHandlers$[i]);
+                    Pathhandler$.closeAllHandlers$(Pathhandler$);
+                    this.SMapPathHandlers$.delete(allKeysPathHandlers$[i]);
+                }                
+            }
+        }
+   
+        return;
     }
 
     /*ADVERTENCIA:*/
     //solo se debe usar en los casos donde se requiera desuscribirse a TODO
-    //lo referente a este servicio, incluyendo los f_Controls$  y el g_Control$, 
+    //lo referente a este servicio, incluyendo los f_Controls$  y el g_handler$, 
     //si se desea conservar estos controls$ vitales para el funcionamiento del servicio
     //es mejor usar los metodos de desuscripcion detallados como:
     //   unsubscribeControls$(), unsubscribePathControls$() y demas... 
-    public unsubscribeAll$(controls$:IControl$<unknown>[], pathControls$:IpathControl$<unknown>[]):void {
+    public closeAllHandlersForModelService$(isCloseInternalHandler=false):void {
+
+        //contenedor global para las keys
+        let allKeysHandlersAndPathHandlers$:string[] = [];
         
-        //================================================
-        //determinar si se envio un array de controls$        
-        controls$ = (Array.isArray(controls$)) ? controls$ : [];
-        pathControls$ = (Array.isArray(pathControls$)) ? pathControls$ : [];        
-        
-        //================================================
-        //se adicionan los control$ genericos    
-        controls$.push(this.g_Control$);
-        pathControls$.push(this.g_pathControl$);
+        //contenedores utilitarios
+        let kH:string[];
+        let kPH:string[];
 
-        //================================================
-        //se adicionan los control$ foraneos (si existen)
-        if (this.f_Controls$.length > 0) {
-            controls$ = controls$.concat(this.f_Controls$);
+        if (isCloseInternalHandler == true) {
+            //almacenar los handler usados internamente (como en Model_meta)
+            kH = Array.from(this.SMapHandlers$.keys());
+            kPH = Array.from(this.SMapPathHandlers$.keys());
+            
+        }else{
+            //almacenar los handler usados internamente (como en Model_meta)
+            kH = Array.from(this.SMapHandlers$.keys());
+            kPH = Array.from(this.SMapPathHandlers$.keys());
+
+            const col_meta = <IMetaColeccion><unknown>this.Model_Meta;
+            const reg = new RegExp(col_meta.__nomColeccion);
+
+            kH = kH.filter(item=>reg.test(item));
+            kPH = kH.filter(item=>reg.test(item));           
+            
+            //dejar como no listo el servicio
+            this.isServiceReady = false;
         }
-        if (this.f_Controls$.length > 0) {
-            pathControls$ = pathControls$.concat(this.f_pathControls$);
-        }
-        //================================================
-        //se desuscriben y eliminan TODOS los controls$ 
-        FSModelService.unsubscribeControl$(controls$);
 
-        //tambien los pathControls$
-        FSModelService.unsubscribePathControl$(pathControls$);
-        //================================================
+        allKeysHandlersAndPathHandlers$ = allKeysHandlersAndPathHandlers$.concat(kH).concat(kPH);
 
-        //dejar como no listo el servicio
-        this.isServiceReady = false;
+        this.closeHandlersOrPathHandlers$(allKeysHandlersAndPathHandlers$);
+
     }
 
     //================================================================================================================================
     /*Utilitarios*/
     //================================================================
-    /*addRFStoControl$()*/
+    /*addRFStoHandlerOrPathHandler$()*/
     //permite adicionar una funcion RFS (o mas llamandolo varias veces)
-    //al control$ y subscribirlas inmediatamente (ideal para el g_control$ )
-    public addRFStoControl$(
-        control$:IControl$<TModel>,
-        RFS:IRunFunSuscribe<TModel>
-    ):IControl$<TModel>{
+    //al handler$ y subscribirlas inmediatamente
+    public addRFStoHandlerOrPathHandler$(
+        keyHandlerOrPathHandler:string,
+        newIdSubscription:string,
+        RFS:IRunFunSuscribe<TModel[]>,
+    ):void{
         
-        //se agrega como referencia al control$
-        control$.RFSs.push(RFS);
-
-        //se subscribe a TODOS los obsevables que posea este control$
-        //se hace de esta manera ya que en la paginacion full pueden existir muchos
-        //observables que requieren la misma RFS
-        for (let i = 0; i < control$.observables.length; i++) {
-            control$.subscriptions[i].push(control$.observables[i].subscribe(RFS));         
+        //seleccionar el handler$
+        if (this.isTypeHandler(keyHandlerOrPathHandler, "Handler")) {
+            let handler$ = this.SMapHandlers$.get(keyHandlerOrPathHandler);
+            handler$.addSubscribe(newIdSubscription, RFS);            
         }
 
-        return control$;
+        if (this.isTypeHandler(keyHandlerOrPathHandler, "PathHandler")) {
+            let handler$ = this.SMapPathHandlers$.get(keyHandlerOrPathHandler);
+            handler$.addSubscribe(newIdSubscription, RFS);
+        }        
+
+        return ;
     }
+
     //================================================================
-    /*createModel()*/
-    //retorna un objeto del modelo con los campos inicializado
-    public createModel():TModel{
-        let Model = <TModel>{};
-        for (const c_m in this.Model_Meta) {
-            //garantizar que sean campos del modelo
-            if(this.Model_Meta[c_m]["nom"] && this.Model_Meta[c_m]["default"]){
-                Model[<string>c_m] = this.Model_Meta[c_m]["default"];
-            }
+    /*updateSnapShotsDocs()*/
+    //actualiza el contenedor de snapShotDoc para saber cual es el 
+    //nuevo documento inicial de lectura para paginacion
+    //
+    //Parametros:
+    //handler$: el manejador con las propiedades de cada consulta, sus behaviors,
+    // observables y subscripciones que tenga asignado
+    //
+    //actions: contenedor de objetos especiales de Firestore que contienen los 
+    //snapshots de la lectura mas reciente de docs
+    //
+    //idxPag_Or_CurrentPage: dependiendo del tipo de paginacion que se este usando
+    //este parametro contendrá el idxPage (necesario para la pagicion full) o el
+    //handler$.currentPageNum (si es paginacionm semcilla) 
+    private updateSnapShotsDocs(
+        handler$:Fs_MServiceHandler$<TModel, Ifs_FilterModel>,
+        actions:DocumentChangeAction<unknown>[],
+        idxPag_Or_CurrentPage:number
+    ):Fs_MServiceHandler$<TModel, Ifs_FilterModel>{
+        //
+        if (actions.length > 0) {
+            //este es un documento especial entregado por firestore
+            //que se debe usar para los metodos starAt() o starAfter
+            //en las querys a enviar en firestore
+            const lastAction = actions.length - 1
+            const snapShotDoc = actions[lastAction].payload.doc           
+            
+            //se actualiza el contenedor de snapShotsDocs
+            handler$.snapshotStartDocs[idxPag_Or_CurrentPage + 1] = snapShotDoc;
+            
         }
-        return Model;
+        return handler$;
     }
     //================================================================
-    /*getPathCollection()*/
-    //obtener el path de la coleccion o subcoleccion,
-    //en las colecciones devuelve el mismo nom ya qeu son Raiz
+    /*reBuildListDocsByPaginatedFull()*/
+    //handler$.listDocs, contiene una copia de TODOS los docs monitoriados
+    //de TODOS los observables que se han creado para la paginacion full.
+    //
+    //se intenta dividir el handler$.listDocs en 2 arrays independientes
+    //iniListDocsParcial ,  finListDocsParcial ; para que en el medio
+    //sea concatenado los docs de la nueva pagina, (teniendo en cuenta
+    //que la division no se hace cuando  handler$.listDocs esta vacio o cuando
+    //se esta detectando la ultima pagina); esto se logra por medio del
+    //idxPag que permite calcular el idx de particion.
+    //
     //Parametros:
     //
-    //pathBase ->  path complemento para construir el el path completo
-    //             util para las subcolecciones
-    public getPathCollection(pathBase:string=""):string{
-        //cast obligado:
-        const col_Meta = <IMetaColeccion><unknown>this.Model_Meta;
+    private reBuildListDocsByPaginatedFull(
+        handler$:Fs_MServiceHandler$<TModel, Ifs_FilterModel>,
+        fs_Bhfilter:Ifs_Filter,
+        readDocs:TModel[],
+        idxPag:number,
+    ):Fs_MServiceHandler$<TModel, Ifs_FilterModel>{
+        //iniciar separacion handler$.listDocs de en 2 arrays diferentes
+        let iniIdxSeccion = idxPag * fs_Bhfilter.limit;
+        let finIdxSeccion = (idxPag + 1) * fs_Bhfilter.limit;
 
-        return (col_Meta.__isEmbSubcoleccion && pathBase != "") ?
-            `${pathBase}/${col_Meta.__nomColeccion}` :
-            `${col_Meta.__nomColeccion}`;
+        let iniListDocsParcial: TModel[] = [];
+        let finListDocsParcial: TModel[] = [];
 
-    }    
-
-    //================================================================
-    /*createIds()*/
-    //generar _ids personalizados con base en tiempo para documentos firebase
-    protected createIds():string{
-
-        //================================================================
-        // obtener la fecha en UTC en HEXA,:  
-        //obtener la diferencia horaria del dispositivo con respecto al UTC 
-        //con el fin de garantizar la misma zona horaria. 
-        // getTimezoneOffset() entrega la diferencie en minutos, es necesario 
-        //convertirlo a milisegundos    
-        const difTime = new Date().getTimezoneOffset() * 60000; 
-        //se obtiene la fecha en hexa par alo cual se resta la diferencia 
-        //horaria y se convierte a string con base 16
-        const keyDate = (Date.now() - difTime).toString(16);  
-        //================================================================
-        // el formtato al final que obtengo es:
-        //  n-xxxxxxxxxxxxxxxx
-        //donde  n   es el numero   _orderkey  y las  x   son el hexa  generado por el uuid
-        let key = v4();
-        key = key.replace(/-/g, ""); //quitar guiones
-        key = key.slice(16); //quitar los 16 primeros bytes para que no sea tan largo el path de busqueda
-        key = `${keyDate}-${key}`;
-        return key;
-
-        //================================================================
-
-    }
-
-    //================================================================
-    /*create_pathDoc()*/
-    //a partir de un _id crea una ruta path de un documento especifico,
-    //en el caso de las subColecciones SIEMPRE será requiere de 
-    //un path_EmbBase  SOLO PARA SUBCOLECCIONES
-    public create_pathDoc(_id:string, path_EmbBase?:string):string{
-        return `${this.getPathCollection(path_EmbBase || "")}/${_id}`;;
-    }
-
-    //================================================================
-    /*formatearDoc()*/
-    //permite depurar y eliminar campos que no seran almacenados en la
-    //base de datos (como los campos virtuales)
-    //Parametros:
-    //
-    //Doc:
-    //el documento a formatear (tambien seria el   map  a formatear
-    //si se esta usando recursivamente)
-    //
-    //modelo_Util
-    //el objeto util de la correspondiente coleccion (o map si se usa
-    //recusrivamente) para determinar los atributos de cada campo
-    //(si son maps o embebidos o virtuales)
-    //
-    //isEdicionFuerte
-    //indica si se desea que los maps (por ahora solo los maps sencillos)
-    //se les realice "edicion fuerte" lo que indica que se reemplazan
-    //TODOS los campos del map sin excepcion, en la edicion debil
-    //(predefinida con false) solo se modifican los campos del map que
-    //realmente hallan tenido cambio de valor
-    //
-    //path
-    //SOLO SE USA EN LLAMADOS RECURSIVOS, indica la ruta que se desea agregar a
-    //los campos  de los  map a editar por medio de una ruta:
-    //"map_campo.subcampo1.subcampo11.subcampoN"
-    //por lo tanto desde un llamado externo al recursivo se debe dejar con el valor predeterminado de  ""
-    protected formatearDoc(Doc: TModel | any, modelo_Meta:TModel_Meta, isEdicionFurte=false, path=""):TModel{
-
-        //================================================================
-        //se asignan los objetos tipados a variables temporales
-        //de tipo any para usar caracteristicas fuera de typescript
-        let mod_M = <any> modelo_Meta;
-        let DocResult = <TModel>{};
-        //================================================================
-
-        for (const c in Doc as TModel) {
-            for (const c_U in mod_M) {
-                if (c == c_U && c != "constructor") {
-
-                    const m_u_campo = <IMetaCampo<any, any>>mod_M[c];
-                    //================================================
-                    //retirar los campos virtuales
-                    if (m_u_campo.isVirtual) {
-                        continue;
-                    }
-                    //================================================
-                    //retirar los campos embebido.
-                    //Los campos embebido NO pueden agregarse a firestore
-                    //desde la coleccion padre, deben ser agregado o modificado
-                    //desde la propia subcoleccion
-                    if(m_u_campo.isEmbebido){
-                        continue;
-                    }
-                    //================================================
-                    //================================================================
-                    //formatear campos de tipo   map
-                    if (m_u_campo.isMap) {
-                        if (m_u_campo.isArray && Array.isArray(Doc[c])) {
-                            //================================================================
-                            //IMPORTANTE: al 07/19 Firestore NO permite ediciones sobre elementos
-                            //de un array por lo tanto toda edicion se hace de caracter fuerte
-                            //TODOS los elementos del array seran REEMPLAZADOS o ELIMINADOS
-                            //================================================================
-
-                            const aDoc = <any>Doc[c];
-                            const raDoc = [];
-                            for (let i = 0; i < aDoc.length; i++) {
-                                raDoc.push(this.formatearDoc(aDoc[i], m_u_campo.extMeta));
-                            }
-                            DocResult[c] = <any>raDoc;
-                            continue;
-                        } else {
-                            if (isEdicionFurte) {
-                                DocResult = Object.assign(DocResult, this.formatearDoc(Doc[c], m_u_campo.extMeta, isEdicionFurte, `${path}${c}.`));
-                            } else {
-                                DocResult[c] = <any>this.formatearDoc(Doc[c], m_u_campo.extMeta);
-                            }
-                            continue;
-                        }
-                    }
-                    //================================================================
-
-                    //...aqui mas campos especiales a formatear...
-
-                    //================================================
-                    //formatear campos normales
-                    if(isEdicionFurte){
-                        DocResult[`${path}${c}`] = Doc[c];
-                    }else{
-                        DocResult[c] = Doc[c];
-                    }
-                    //================================================
-                }
-            }
+        if (handler$.listDocs.length >= iniIdxSeccion) {
+            iniListDocsParcial = handler$.listDocs.slice(0, iniIdxSeccion);
+        }
+        if (handler$.listDocs.length >= finIdxSeccion) {
+            finListDocsParcial = handler$.listDocs.slice(finIdxSeccion);
         }
 
-        return DocResult;
-    }
-
-    /*formatearCampos()*/
-    //--esta dañado--//
-    protected formatearCampos(Doc:TModel | any, modelo_Meta:TModel_Meta):TModel{
-        for (const c in Doc) {
-            for (const c_U in modelo_Meta) {
-                if (c == c_U && c != "constructor") {
-
-                    const m_u_campo = <IMetaCampo<any, any>>modelo_Meta[c];
-                    //================================================
-                    //determinar si el campo tienen la propiedad para formatear
-
-                    // if(m_u_campo.formateoCampo){
-                    //     //================================================
-                    //     //los campos embebidos No se formatean por ahora
-                    //     if(modelo_Meta[c].isEmbebido){
-                    //         continue;
-                    //     }
-                    //     //================================================
-                    //     //los campos map y arrayMap se
-                    //     //formatean recursivamente
-                    //     if(m_u_campo.isMap){
-                    //         if (m_u_campo.isArray && Array.isArray(Doc[c])) {
-                    //             for (let i = 0; i < Doc[c].length; i++) {
-                    //                 Doc[c][i] = this.formatearCampos(Doc[c][i], m_u_campo.util);
-                    //             }
-                    //         } else {
-                    //             Doc[c] = this.formatearCampos(Doc[c], m_u_campo.util);
-                    //         }
-                    //         continue;
-                    //     }
-                    //     //================================================
-                    //     //los campos array basico tienen se
-                    //     //formatean recursivamente
-                    //     if(m_u_campo.isArray && Array.isArray(Doc[c])){
-                    //         for (let i = 0; i < Doc[c].length; i++) {
-                    //             Doc[c][i] = this.formatearCampos(Doc[c][i], m_u_campo.util);
-                    //         }
-                    //         continue;
-                    //     }
-                    //     //================================================
-                    //     //Formatear campo normal:
-                    //     Doc[c] = m_u_campo.formateoCampo(Doc[c]);
-                    // }
-
-                    //================================================
-                }
-            }
-        }
-        return Doc;
-    }
-
-    //================================================================
-    /*copiarData()*/
-    //clonacion de objetos JSON a  diferentes niveles de profundidad
-    //CUIDADO CON EL STACK, NO PUEDE SER MUY PROFUNDO
-    protected copiarData(data:any | any[]):any | any[]{
-
-        let dataCopia:any;
-
-        if (typeof(data) == "object" || Array.isArray(data)) {
-            if (Array.isArray(data)) {
-                dataCopia = [];
-                for (let i = 0; i < data.length; i++) {
-                    dataCopia[i] = this.copiarData(data[i]);
-                }
-            }else{
-                dataCopia = {};
-                for (const key in data) {
-                    if (typeof(data[key]) == "object" || Array.isArray(data[key])) {
-                        dataCopia[key] = this.copiarData(data[key]);
-                    }else{
-                        dataCopia[key] = data[key];
-                    }
-                }
-            }
+        //se re-arma doc$.listDocs con los nuevos docs (o con las modificaciones)
+        //recordando que este codigo se ejecuta ya se por que se realizó una nueva
+        //consulta o por que el observable detecto alguna modificacion de algun doc
+        const lsD = iniListDocsParcial.concat(readDocs).concat(finListDocsParcial);
+        if (lsD.length > 0) {
+            handler$.listDocs = this._Util.deleteDocsDuplicateForArray(lsD, "_id"); //-- solo para _id personalizados
         } else {
-            dataCopia = data;
-        }
-        return dataCopia;
-    }
+            handler$.listDocs = [];
+        }        
 
+        return handler$;
+    }
+    
     //================================================================
-    /*ajustarDecimale()*/
-    //redondea un numero y ajusta decimales, tomado del sitio oficial:
-    //https://developer.mozilla.org/es/docs/Web/JavaScript/Referencia/Objetos_globales/Math/round
-    //Parametros:
-    //type-> "round" redondeo estandar (arriba si es >=5 y abajo si es <5)
-    //       "floor" redondeo abajo
-    //       "ceil" redondeo arriba
+    /*getPartial_pathDocsForPaginate()*/
     //
-    //numValue-> numero a redondear
-    //exp -> decenas o decimales a redondear,
-    //       para las decenas (decenas exp=1, centena exp=2, miles exp=3...) se usan numeros positivos
-    //       para las decimales (decimas exp=-1, centecimas exp=-2, milesimas exp=-3...) se usan numeros negativos
-    //       si exp es 0 ejecuta la operacion de redondeo por default de la libreria Math
-    protected ajustarDecimales(type:"round" | "floor" | "ceil", numValue:any, exp:number):number{
+    //Parametros:
+    //
+    private getPartial_pathDocsForPaginate(pathHandler$:Fs_MServicePathHandler$<TModel>, pageDirection: "previousPage" | "nextPage"):string[]{
+        
+        let idxIni:number;
+        let sizePartial:number;
+        const sizePathDocs = pathHandler$._pathPopulateDocs.length;
 
-        //determinar si  exp no esta definido para que
-        //no haga ninguna operacion
-        if(typeof exp === 'undefined' || exp==null){
-            return numValue;
+        //extrae solo los _pathDocs que se rastrearan en esta pagina
+        if (pageDirection == "previousPage") {
+            idxIni = pathHandler$.limitPopulate * (pathHandler$.currentPageNum - 1);
+            sizePartial = pathHandler$.limitPopulate * pathHandler$.currentPageNum;            
+        }
+        
+        if (pageDirection == "nextPage") {
+            idxIni = pathHandler$.limitPopulate * (pathHandler$.currentPageNum + 1);
+            sizePartial = (sizePathDocs >= (pathHandler$.limitPopulate * (pathHandler$.currentPageNum + 2))) ?
+                    pathHandler$.limitPopulate * (pathHandler$.currentPageNum + 2) :
+                    sizePathDocs;            
         }
 
-        // Si el exp es cero...
-        if (+exp === 0) {
-        return Math[type](numValue);
-        }
-        numValue = +numValue; //+numValue intentar convertir a numero cualquier cosa
-        exp = +exp; //+exp intentar convertir a numero culaquier cosa
-
-        // Si el valor no es un número o el exp no es un entero...
-        if (isNaN(numValue) || !(typeof exp === 'number' && exp % 1 === 0)) {
-        return NaN;
-        }
-        // Shift
-        numValue = numValue.toString().split('e');
-        numValue = Math[type](+(numValue[0] + 'e' + (numValue[1] ? (+numValue[1] - exp) : -exp)));
-        // Shift back
-        numValue = numValue.toString().split('e');
-        numValue = +(numValue[0] + 'e' + (numValue[1] ? (+numValue[1] + exp) : exp));
-        return numValue;
-    }   
+        return  pathHandler$._pathPopulateDocs.slice(idxIni, sizePartial);
+    }
+    
     //================================================================
-    /*getLlaveFinBusquedaStrFirestore()*/
-    //obtener llave para la condición del búsqueda limite mayor para
-    //campos string en firestore
-    protected getLlaveFinBusquedaStrFirestore(llaveInicial:string):string{
+    /*reduceMemoryByPaginated()*/
+    //administracion de memoria de observables para la paginacion reactiva full
+    //desuscribe los observables que no estan siendo utilizados, ya que cada vez
+    //que exista una modificacion en algun documento (especificamente eliminacion)
+    //puede darse el caso que se hallan eliminado muchos docs lo cual dejaria 1 o
+    //mas observables monitoriando  vacios []  , para evitar esto este fragmento
+    //de codigo analiza si existen observables que esten rastreando   vacios[]
+    //y los desuscribe y elimina
+    //
+    //Parametros:
+    //handler$: el manejador con las propiedades de cada consulta, sus behaviors,
+    // observables y subscripciones que tenga asignado
+    private reduceMemoryByPaginated(
+        handler$:Fs_MServiceHandler$<TModel, Ifs_FilterModel>,
+        BhFilter:Ifs_Filter
+    ):Fs_MServiceHandler$<TModel, Ifs_FilterModel>{
 
-        let llaveFinal:string = llaveInicial.substring(0, llaveInicial.length-1);
-        let charIni:string = llaveInicial.charAt(llaveInicial.length-1);
-        let charFin:string;
+        //la cantidad minima de de subscripciones que 
+        //deben permanecer vivas aunque que rastreen vacios
+        //si se desea ser estricto con no dejar monitoreos 
+        //vacios se debe asignar 0, sin embargo 1 es lo adecuado
+        const minSubsKeepAlive = 1;
 
-        //detectar los caracteres "estorbo" de mi hermoso idioma
-        if (/[ñÑáéíóúÁÉÍÓÚü]/.test(charIni)) {
-            charFin = charIni=="ñ" ? "o" : charIni; //--¿que pasa con ..ñó..?
-            charFin = charIni=="Ñ" ? "O" : charIni; //--¿que pasa con ..ÑÓ..?
-            charFin = charIni=="á" ? "b" : charIni;
-            charFin = charIni=="é" ? "f" : charIni;
-            charFin = charIni=="í" ? "j" : charIni;
-            charFin = charIni=="ó" ? "p" : charIni;
-            charFin = charIni=="ú" ? "v" : charIni;
-            charFin = charIni=="Á" ? "B" : charIni;
-            charFin = charIni=="É" ? "F" : charIni;
-            charFin = charIni=="Í" ? "J" : charIni;
-            charFin = charIni=="Ó" ? "P" : charIni;
-            charFin = charIni=="Ú" ? "V" : charIni;
-            charFin = charIni=="ü" ? "v" : charIni;
-        } else {
-            //para evitar recorrer todo el alfabeto y dígitos
-            //asignar el caracter siguiente (el Unicode de charIni + 1) para la búsqueda
-            charFin = String.fromCharCode(charIni.charCodeAt(0) + 1);
+        const limitDocs = BhFilter.limit;
+        const totalDocs = handler$.listDocs.length; 
+
+        //el numero real de paginas de acuerdo a los 
+        //docs que se esten rastreando
+        const realPageNum = Math.ceil(totalDocs / limitDocs);
+        //numero de paginas virtuales que la aplicacion 
+        //asume que se han leido, 
+        //Importante:tiene logica 1
+        const virtualPageNum = handler$.currentPageNum + 1;
+
+        //se determina las paginas en exceso, se le descuenta
+        //las subscribciones que se quiere que sigan vivas 
+        //aunque se esten rastreando vacios 
+        const excessPageNum = virtualPageNum - realPageNum - minSubsKeepAlive;
+
+        if (excessPageNum > 0 ) {
+
+            //se usa una espera corta para entregar los docs 
+            //leidos antes de realizar el cierre
+            const t = 5; //5ms
+            setTimeout(() => {
+                //las subscriciones que deben quedar vivas
+                //recordar: se eliminan las ultimas que se hallan agregado
+                const keepAlive = virtualPageNum - excessPageNum;
+                handler$.closeContainerHandlers$(keepAlive);                
+            }, t);
+
         }
-        //finalemente concatenar
-        llaveFinal = llaveFinal + charFin;
-        return llaveFinal;
+
+        return handler$;
     }
 
-    //================================================================
-    /*eliminarItemsDuplicadosArray()*/
-    //verificacion y eliminacion de duplicados en un array de objetos
-    //elimina los duplicados en el primer nivel en base a un campo,
-    //se buscaran los objetos con el mismo valor del campo referencia
-    //y se conservará solo el ultimo objeto que tenga dicho valor repetido
-    //parametros:
-    //data -> array que contiene los objetos a testear y eliminar su duplicado
-    //campoRef -> el nombre del campo del cual por el cual se analizaran los duplicados
-    //            (normalmente es el campo identificado o   _id)
-    protected eliminarItemsDuplicadosArray(datos:TModel[], campoRef:string):any[]{
+    /*reducememoryByPopulate()*/
+    //
+    //Parametros:
+    //pathHandler$: el handler a reducirole memoria 
+    private reducememoryByPopulate(pathHandler$:Fs_MServicePathHandler$<TModel>, idxPopulate:number):Fs_MServicePathHandler$<TModel>{
+        //se usa una espera corta para entregar los docs 
+        //leidos antes de realizar el cierre
+        const t = 5; //5ms
+        setTimeout(() => {
+            pathHandler$.closeContainerHandlerByIdxCH(idxPopulate);                
+        }, t);
 
-        if(datos.length > 0){
-
-            let datosFiltrados:any[] = [];
-            let BufferConvertidor = {};
-
-            //tranforma cada objeto colocando como propiedad principal el
-            // campoRef de la siguiente manera:
-            //{"campoRef1":{...data}, "campoRefUnico2":{...data}}
-            //muy parecido a como usa firebase los _id como referencia de campo
-            //ya que en un objeto JSON nunca puede haber 2 campos con el mismo nombre
-            for(var i in datos) {
-                BufferConvertidor[datos[i][campoRef]] = datos[i];
-             }
-
-             //reconstruye el array
-             for(let i in BufferConvertidor) {
-                datosFiltrados.push(BufferConvertidor[i]);
-             }
-              return datosFiltrados;
-
-        }else{
-            return [];
-        }
+        return pathHandler$;
+    }
+    
+    //================================================================================================================================
+    /*isTypeHandler()*/
+    //determina si la keyHandler recibida pertenece al mismo tipo testeado
+    //Parametros:
+    //keyTest: key a testear
+    //typeTest: tipo de handler esperado
+    private isTypeHandler(keyTest:string, typeTest:"Handler"|"PathHandler"):boolean{
+        const reg = new RegExp(typeTest);
+        return reg.test(keyTest);
     }
 
     //================================================================================================================================
+    /*createDocsTestByTime()*/
+    //usado para crear docs de testeo en masa separados por un tiempo t
+    //Parametros:
+    //
+    //docsTest : los documentos test a crear
+    //
+    protected createDocsTestByTime(docsTest:TModel | TModel[], path_EmbBase?:string):void{
+        
+        let dT = (Array.isArray(docsTest)) ? docsTest : [docsTest];
+
+        const ti = 1000;
+        let idx = 0;
+        const interval = setInterval(()=>{           
+            if (idx == (dT.length - 1)) {
+                return clearInterval(interval);                
+            }   
+
+            this.create(dT[idx], path_EmbBase)
+            .then(() => {
+                console.log(`Doc ${dT[idx]["_pathDoc"]} creado`);
+            })
+            .catch((error)=>{ console.log(error)});  
+            
+            idx++;
+
+        }, ti);        
+    }
+    
 }
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+
 
 

@@ -1,10 +1,9 @@
 
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*coleciones Activas*/
 //se deja un registro de todos los nom de las colecciones y subcolecciones
 //almacenables en firestore y usadas en el proyecto 
 //(usable para configuracion de roles)
-
 export var nomsColecciones = {
     Roles:"Roles",
     emb_Permisos:"emb_Permisos",
@@ -15,14 +14,14 @@ export var nomsColecciones = {
     emb_SubColeccion:"emb_SubColeccion",
 }
 
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*IMetaColeccion*/
 export interface IMetaColeccion{
     __nomColeccion:string;
     __nomPathColeccion:string;
     __isEmbSubcoleccion:boolean;
 }
-//================================================================================================================================
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*IMetaCampo*/
 //Interfaz con metadatos (banderas y configuracion) para cada campo de cada modelo
 //Tipado:
@@ -114,9 +113,7 @@ export interface IMetaCampo<TCampo, ext_Meta>{
     //correspondiente a ese   map   o a esa subcoeccion
     extMeta?:ext_Meta;
 }
-
-
-
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 export enum ETipoValidador{
     Required,
     
@@ -157,3 +154,21 @@ export interface IValidatorEnum<TCampo>{
 export interface IValidatorAsync{
     url: string; 
 }
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+/*abstract class Model_Meta*/
+//
+export abstract class Model_Meta{
+
+    abstract __Util:any; 
+
+    private service
+
+    constructor(){
+    }
+
+    //entrega los handlers internos usados en metadata
+    public abstract export_meta__keyHadlersOrPathHandlers$?():string[];   
+
+}
+

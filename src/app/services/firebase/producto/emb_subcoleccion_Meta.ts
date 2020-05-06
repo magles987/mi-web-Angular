@@ -1,5 +1,5 @@
 import { Iemb_SubColeccion, emb_SubColeccion } from '../../../models/firebase/producto/emb_subColeccion';
-import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
+import { IMetaColeccion, IMetaCampo, nomsColecciones, Model_Meta } from '../meta_Util';
 
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*{Modelo}_Meta*/
@@ -13,7 +13,7 @@ import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
 //
 //IMPORTANTE: en esta clase si se deberia agregar metodos y demas funcionalidades
 
-export class emb_SubColeccion_Meta implements Iemb_SubColeccion<any>, IMetaColeccion {
+export class emb_SubColeccion_Meta extends Model_Meta implements Iemb_SubColeccion<any>, IMetaColeccion {
 
     //================================================================
     /*metadata estatica:*/
@@ -49,12 +49,19 @@ export class emb_SubColeccion_Meta implements Iemb_SubColeccion<any>, IMetaColec
 
     //================================================================
     constructor() {
-
+        super();
     }
+    
     //================================================================
-    //metodos para actualizacion dinamica de metadata
+    /*get_meta_KeyHandlers()*/
+    //se debe devolder TODOS los keyHandlers foraneos usados en este meta
+    public export_meta__keyHadlersOrPathHandlers$():string[]{        
+        //aqui todos los handlers que se usen en este meta
+        return [            
+            
+        ];
+    }
 
-    //================================================================    
 }
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*Clases _Meta para campo especiales (map_ y mapA_)*/

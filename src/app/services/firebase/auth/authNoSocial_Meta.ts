@@ -1,5 +1,4 @@
 import { IAuthNoSocial, AuthNoSocial } from '../../../models/firebase/auth/authNoSocial';
-import { IQValue } from '../fs_Model_Service';
 import { IMetaCampo, IMetaColeccion } from '../meta_Util'
 
 //================================================================================================================================

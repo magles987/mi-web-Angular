@@ -1,22 +1,23 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { FormControl, FormGroup } from "@angular/forms";
-import { from, concat, of, interval, merge, combineLatest, timer } from 'rxjs';
 
-import { IControl$, IpathControl$, IRunFunSuscribe, FSModelService } from 'src/app/services/firebase/fs_Model_Service';
+import { IRunFunSuscribe } from 'src/app/services/ServiceHandler$';
+import { Fs_ModelService, ETypePaginate, ETypePaginatePopulate } from 'src/app/services/firebase/fs_Model_Service';
 
 import { AuthService, ETipoAuth } from 'src/app/services/firebase/auth/auth.service';
 import { AuthNoSocial,  } from 'src/app/models/firebase/auth/authNoSocial';
 
-import { IProducto, Producto } from '../../models/firebase/producto/producto';
-import { ProductoService, IQValue_Producto, Iv_PreGet_Producto } from '../../services/firebase/producto/producto.service';
+import { Producto, IProducto } from '../../models/firebase/producto/producto';
+import { ProductoService, Ifs_FilterProducto } from '../../services/firebase/producto/producto.service';
 
 import { emb_SubColeccion, Iemb_SubColeccion } from 'src/app/models/firebase/producto/emb_subColeccion';
-import { emb_subColeccionService, IQValue_emb_SubColeccion } from 'src/app/services/firebase/producto/emb_subcoleccion.service';
+import { emb_subColeccionService, Ifs_FilterEmb_SubColeccion } from 'src/app/services/firebase/producto/emb_subcoleccion.service';
 
-import { Rol } from 'src/app/models/firebase/rol/rol';
-import { RolService } from 'src/app/services/firebase/rol/rol.service';
-import { concatAll, mergeAll } from 'rxjs/operators';
+import { Rol, IRol } from 'src/app/models/firebase/rol/rol';
+import { RolService, Ifs_FilterRol } from 'src/app/services/firebase/rol/rol.service';
 
+
+import { testConsumidorFabrica } from 'src/app/testFactori/test';
 
 
 @Component({
@@ -26,14 +27,13 @@ import { concatAll, mergeAll } from 'rxjs/operators';
 })
 export class ProductosComponent implements OnInit, OnDestroy {
 
-  //================================================
   //contenedor de documento para trabajo en plantilla
   public Producto:Producto; 
 
-  public Producto$:IControl$<Producto>;
+  public keyProducto$:string;
   //public Producto_pathDocCtrl$:IpathDoc$<Producto>;
 
-  public emb_SubColeccion$:IControl$<emb_SubColeccion>;
+  public keyEmb_SubColeccion$:string;
 
   //array de documentos obtenidos de la bd
   //de acuerdo a los filtros aplicados
@@ -41,83 +41,75 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   public Productos_Path_Id:Producto | null;
 
-  //================================================
   //Campos del formulario para crear o editar documento
   public formCrearOActualizar:FormGroup; 
-  //================================================
-
-  //================================================================================================================================
-  constructor(public _AuthService:AuthService,
-              public _RolService:RolService,
+  
+  constructor(//public _AuthService:AuthService,
               public _ProductoService:ProductoService,
               public _emb_SubColeccionService:emb_subColeccionService,
              
              ) {
  
-    //================================================
     //preparar la inicializacion de objetos principales
     this.Producto = new Producto();
-
     this.listProductos = []; 
-    //================================================
+
     //inicializacion de controls
-    this.Producto$ = this._ProductoService.createControl$(this.RFS_Productos);
-    //this.Producto_pathDocCtrl$ = this._ProductoService.createPathControl$(this.RFS_Productos_pathDoc);
-    this.emb_SubColeccion$ = this._emb_SubColeccionService.createControl$(this.RFS_Emb_SubColeccion);
+    this.keyProducto$ = this._ProductoService.createHandler$(this.RFS_Productos, "Handler", "Component");
+    //this.Producto_pathDocCtrl$ = this._ProductoService.createHandler$(this.RFS_Productos_pathDoc, "pathHandler");
+    this.keyEmb_SubColeccion$ = this._emb_SubColeccionService.createHandler$(this.RFS_Emb_SubColeccion, "Handler", "Component");
 
-    //================================================
-    //inicializacion de primeras consultas (opcional):
 
-    this._ProductoService.ready()
-    .then(()=>{
+    //­­­___ <TEST> _____________________________________________________
+        
+    let dataP = [
+      "Productos/16f1ec3ddfd-81de43de6700c3c7",
+      "Productos/171d53bff26-9e81e5e8c977923b",
+      "Productos/171d53bff27-b5f383be86246a9f",
+      "Productos/171d540091a-9a52d51a6fb23af5",
+      "Productos/171da99f76d-8827390122a80ede",
+      "Productos/171e0ce4dd5-a52a8f0ac110503d",
+      "Productos/171e0ce5404-9c6490a539895e6f",
+      "Productos/171e0ce5945-b138cb67ffa406fd",
+      "Productos/171e0ce5e06-a2eb5f8148ba1964",
+      "Productos/171e0ce653d-826df3f4b3111fad",
+      "Productos/171e0ce6925-907198e3c1f874d7",
+      "Productos/171e0ce6d0e-8eaeafdc7108ec1e",
+      "Productos/171e0ce70f6-b2e907f330f55587",
+      "Productos/171e0efbf6c-ae95fe294cba472b",
+      "Productos/171e0efc34a-ae570e8d97c36420",
+      "Productos/171e0efc732-b9e4d4f52977bb28",
+      "Productos/171e0efcea0-8549fd9fad2eb7a6",
+      "Productos/171e0efd287-b59269f157955713",
+      "Productos/171e0efd681-8f626cd54edaddcc",
+      "Productos/171e0efda57-8a013f4b76ba8eaa",
+      "Productos/171e0efde3f-b35dfa50d55b4432",
+    ]
 
-      //this.Producto$ = this._ProductoService.get$(this.Producto$, null, this.getDatosPreGet());
-      //this.Producto_pathDocCtrl$ = this._ProductoService.getProducto_pathDoc$(this.Producto_pathDocCtrl$, this.RFS_Productos_pathDoc, null);
-    
-      //TEST--------------------------------------------------------------------------
+    const rfsP:IRunFunSuscribe<Producto[]> = {
+      next:(d) => {
+          this.listProductos = d;
+          return;
+      },
+      error:(error)=>{ console.log(error)}
+    };
 
-      // const _pathBase1 = "Productos/16f1ec3ddfd-81de43de6700c3c7";
-      // this.emb_SubColeccion$ = this._emb_SubColeccionService.get$(this.emb_SubColeccion$, null, null, _pathBase1);
-      // const obsP = this.Producto$.obsMergeAll;
-      // const obsE = this.emb_SubColeccion$.obsMergeAll;
-      // const obsT = timer(30000);
-      // combineLatest([obsP, obsE, obsT])
-      // .subscribe((d)=>{  
-      //   console.log("SE HIZO TODO");
-      // });
-  
-      // obsP.subscribe(()=>{
-      //   console.log("SE HIZO Producto")
-      // });
-      // obsE.subscribe(()=>{
-      //   console.log("SE HIZO subColeccion")
-      // });
-  
-      //TEST--------------------------------------------------------------------------    
-      // let _pathDocs = ["Productos/000001-bb137223430a5d9f", 
-      //                 "/Productos/000002-a76299ccf1d7ce9b",
-      //                 "/Productos/000003-ab3e840a0dff7f5d",
-      //                 "/Productos/000004-9a434806011343ce",
-      //                 "/Productos/000005-8d5b017aa032ebc3",
-      //                 "/Productos/000006-ba0f544bb2e38778"
-      //                 ]
-      // let _pathDocs = "Productos/000001-bb137223430a5d9f";
-      // let control$ = this._ProductoService.populate(null, this.RFS_poblar, _pathDocs,4);
-      // setTimeout(()=>{
-      //   this._ProductoService.populate(control$, this.RFS_poblar);
-      // }, 10000);
-    })
-    .catch((err)=>{
-      console.log(err);
-    });
+    //this._ProductoService.get$( this.keyProducto$, {limit:5, typePaginate:ETypePaginate.Accumulative});
+    const keyPathP = this._ProductoService.createHandler$(rfsP, "PathHandler", "Component");
+    this._ProductoService.populate$(keyPathP, dataP, ETypePaginatePopulate.Full);
+    setTimeout(() => {
+      this._ProductoService.pagitanePopulate$(keyPathP, "nextPage");      
+      setTimeout(() => {
+        this._ProductoService.pagitanePopulate$(keyPathP, "previousPage");
+      }, 10000);
+    }, 10000);
 
-    //================================================
+    //________________________________________________________________
 
   }
 
   //================================================================================================================================
   //Hooks de componente angular:
-  //================================================================================================================================
   ngOnInit() {   
     //================================================
     //configurar las opciones del formulario
@@ -137,66 +129,15 @@ export class ProductosComponent implements OnInit, OnDestroy {
     //================================================
     //desuscribirse de todos los observables que 
     //use este componente 
-    FSModelService.unsubscribeControl$([
-      this.Producto$,
-      this.emb_SubColeccion$
+    this._ProductoService.closeHandlersOrPathHandlers$([
+      this.keyProducto$,
     ]);
 
-    FSModelService.unsubscribePathControl$([
-      //..aqui todos los pathControl$
+    this._ProductoService.closeHandlersOrPathHandlers$([
+      this.keyEmb_SubColeccion$
     ]);    
     //================================================
   }
-
-  //================================================================================================================================
-  //declarar filtros (se debe usar metodo getters para poder crear
-  //objetos de filtrado independientes, tomando una base como referencia)
-  private getFiltroProductosTodo():IProducto<IQValue_Producto>{
-    let valQuery:IProducto<IQValue_Producto> = {
-      _id:{
-        _orden:"asc"
-      }
-    };
-    return valQuery;
-  } 
-
-  private getFiltroProductosPorNombre():IProducto<IQValue_Producto>{
-    let valQuery:IProducto<IQValue_Producto> = {
-      nombre:{
-        ini:"ha",
-        _orden:"asc"
-      }
-    };
-    return valQuery;
-  } 
-
-  private getFiltroProductosPorPrecio():IProducto<IQValue_Producto>{
-    let valQuery:IProducto<IQValue_Producto> = {
-      precio:{
-        //val:100 //esto si quiero igualdad
-        min:300,
-        _orden:"asc"
-      }
-    };
-    return valQuery;
-  } 
-
-  private getFiltroProductosPorRuedas():IProducto<IQValue_Producto>{
-    let valQuery:IProducto<IQValue_Producto> = {
-      map_miscelanea:{
-        ruedas:{
-          val:2,
-          _orden:"asc"
-        }
-      }
-    };
-    return valQuery;
-  } 
-
-  private getFiltroProductosArrayNormal():IProducto<IQValue_Producto>{
-    let valQuery:IProducto<IQValue_Producto> = null;
-    return valQuery;
-  } 
 
   //================================================================
   //propiedades metodos de ejecucion next y error para las suscripciones
@@ -204,8 +145,8 @@ export class ProductosComponent implements OnInit, OnDestroy {
   //desde la base de datos (sea poruna nueva solicitud query o por algun cambio 
   //detectado por los observables asignados)
 
-  private RFS_Productos:IRunFunSuscribe<Producto> = {
-    next:(docRes:Producto[])=>{
+  private RFS_Productos:IRunFunSuscribe<Producto[]> = {
+    next:(docRes)=>{
       this.listProductos = docRes;  
     }, 
     error:(err)=>{
@@ -214,7 +155,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
   };
 
   private RFS_Productos_pathDoc:IRunFunSuscribe<Producto> = {
-    next:(docRes:Producto)=>{
+    next:(docRes)=>{
       this.Productos_Path_Id = docRes;
     }, 
     error:(err)=>{
@@ -222,8 +163,8 @@ export class ProductosComponent implements OnInit, OnDestroy {
     }
   };
 
-  private RFS_Emb_SubColeccion:IRunFunSuscribe<any> = {
-    next:(docRes:any[])=>{
+  private RFS_Emb_SubColeccion:IRunFunSuscribe<emb_SubColeccion[]> = {
+    next:(docRes)=>{
       let test = docRes;
       let a ="";
     }, 
@@ -247,12 +188,12 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   public paginarAnterior(){
 
-    this.Producto$ = this._ProductoService.paginate$(this.Producto$, "previousPage");
+    this._ProductoService.paginate$(this.keyProducto$, "previousPage");
   }
 
   public paginarSiguiente(){
 
-    this.Producto$ = this._ProductoService.paginate$(this.Producto$, "nextPage");
+    this._ProductoService.paginate$(this.keyProducto$, "nextPage");
   }
 
   //================================================================
@@ -265,33 +206,52 @@ export class ProductosComponent implements OnInit, OnDestroy {
       this._emb_SubColeccionService.ready() 
     ])
     .then(()=>{
+      
+      let Ufilter = <Ifs_FilterProducto>{};  
+      let emb_filter = <Ifs_FilterEmb_SubColeccion>{}    
+      
+      //A modo de prueba:
+      //this._ProductoService.HooksService;
+      
       switch (opc) {
         case "Todo":
-          this.Producto$ = this._ProductoService.get$(this.Producto$, this.getFiltroProductosTodo(), this.getDatosPreGet());
+          this._ProductoService.get$(this.keyProducto$, Ufilter);
           break;
         case "_id":
-          this.Producto$ = this._ProductoService.getId$(this.Producto$, "IDxxxxxxxxxxxxx", this.getDatosPreGet());
+          this._ProductoService.getId$(this.keyProducto$, "IDxxxxxxxxxxxxx");
           break;        
         case "Nombre":
-          this.Producto$ = this._ProductoService.getPorNombre$(this.Producto$, this.getFiltroProductosPorNombre(), this.getDatosPreGet());
+          Ufilter.VQ_IniStr = {};
+          Ufilter.VQ_IniStr.nombre = "ha";
+
+          this._ProductoService.getPorNombre$(this.keyProducto$, Ufilter);
           break;  
         case "Precio":
-          this.Producto$ = this._ProductoService.getPorPrecio$(this.Producto$, this.getFiltroProductosPorPrecio(), this.getDatosPreGet());
+          Ufilter.VQ_EqualNum = {};
+          Ufilter.VQ_EqualNum.precio = 100;
+          // Ufilter.VQ_LtEqNum = {};
+          // Ufilter.VQ_LtEqNum.precio = 300;          
+
+          this._ProductoService.getPorPrecio$(this.keyProducto$, Ufilter);
           break;
         case "Ruedas":
-          this.Producto$ = this._ProductoService.getPorMiscRuedas$(this.Producto$, this.getFiltroProductosPorRuedas(), this.getDatosPreGet());
+          
+          Ufilter.VQ_EqualNum = {};
+          Ufilter.VQ_EqualNum.map_miscelanea = {ruedas:4};
+
+          this._ProductoService.getPorMiscRuedas$(this.keyProducto$, Ufilter);
           break;  
   
         case "ArrayNormal":
-          this.Producto$ = this._ProductoService.getPorArrayNormal$(this.Producto$, null, this.getDatosPreGet());    
+          this._ProductoService.getPorArrayNormal$(this.keyProducto$, Ufilter);    
           break;
         case "SubCol":
-          let path_embBaseNormal = this.listProductos[0]._pathDoc; //opcion basica
-          this.emb_SubColeccion$ = this._emb_SubColeccionService.get$(this.emb_SubColeccion$, null, null, path_embBaseNormal );    
+          emb_filter.path_EmbBase = this.listProductos[0]._pathDoc; 
+          this._emb_SubColeccionService.get$(this.keyEmb_SubColeccion$, emb_filter);    
           break;           
         case "SubColGrup":
-          let path_embBaseGrup = null;
-          this.emb_SubColeccion$ = this._emb_SubColeccionService.get$(this.emb_SubColeccion$, null, null, path_embBaseGrup );    
+          emb_filter.path_EmbBase = null; 
+          this._emb_SubColeccionService.get$(this.keyEmb_SubColeccion$, emb_filter);    
           break;        
       
         default:
@@ -304,16 +264,6 @@ export class ProductosComponent implements OnInit, OnDestroy {
 
   }
   //================================================================================================================================
-  //================================================================================================================================
-
-  //a modo de prueba
-  private getDatosPreGet():Iv_PreGet_Producto{
-    return {
-      imp : 20
-    };
-  }
-
-  //================================================================================================================================
 
   singUpEmail(){
     const credencial = <AuthNoSocial>{
@@ -321,37 +271,37 @@ export class ProductosComponent implements OnInit, OnDestroy {
       pass : "123456"
     }
     
-    this._AuthService.signUpNoSocial(credencial)
-    .then((result)=>{
-      let p = result;
-    })
-    .catch((err)=>{
-      console.log(err);
-    });
+    // this._AuthService.signUpNoSocial(credencial)
+    // .then((result)=>{
+    //   let p = result;
+    // })
+    // .catch((err)=>{
+    //   console.log(err);
+    // });
   }
 
   login(tipo:ETipoAuth){
-    const credencial = <AuthNoSocial>{
-      email: "andres@andres.com",
-      pass : "987000"
-    }
-    this._AuthService.login(tipo, credencial)
-    .then((result)=>{
-      let p = result;
-    })
-    .catch((err)=>{
-      console.log(err);
-    });
+    // const credencial = <AuthNoSocial>{
+    //   email: "andres@andres.com",
+    //   pass : "987000"
+    // }
+    // this._AuthService.login(tipo, credencial)
+    // .then((result)=>{
+    //   let p = result;
+    // })
+    // .catch((err)=>{
+    //   console.log(err);
+    // });
   }
 
   logout(){
-    this._AuthService.logout()
-    .then(()=>{
+    // this._AuthService.logout()
+    // .then(()=>{
 
-    })
-    .catch((err)=>{
-      console.log(err);
-    });
+    // })
+    // .catch((err)=>{
+    //   console.log(err);
+    // });
   }
   //================================================================================================================================
 
@@ -428,7 +378,7 @@ export class ProductosComponent implements OnInit, OnDestroy {
   }
 
   eliminar(){
-    this._ProductoService.eliminar("") //""solo para ejemplo
+    this._ProductoService.delete("") //""solo para ejemplo
     .then(()=>{
       console.log("borrado ya en el componente: ");
     })

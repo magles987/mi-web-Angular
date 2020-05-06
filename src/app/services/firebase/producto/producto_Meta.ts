@@ -1,5 +1,6 @@
 import { IProducto, Producto, Map_miscelanea, MapA_misc, IMap_miscelanea, IMapA_misc } from '../../../models/firebase/producto/producto';
-import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
+import { IMetaColeccion, IMetaCampo, nomsColecciones, Model_Meta } from '../meta_Util';
+
 
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*{Modelo}_Meta*/
@@ -13,7 +14,7 @@ import { IMetaColeccion, IMetaCampo, nomsColecciones } from '../meta_Util';
 //
 //IMPORTANTE: en esta clase si se deberia agregar metodos y demas funcionalidades
 
-export class Producto_Meta implements IProducto<any>, IMetaColeccion {
+export class Producto_Meta extends Model_Meta implements IProducto<any>, IMetaColeccion {
 
     //================================================================
     /*metadata estatica:*/
@@ -71,19 +72,27 @@ export class Producto_Meta implements IProducto<any>, IMetaColeccion {
 
     };
 
+    //keyHandlers$ foraneos:  
+
     //================================================================
     constructor() {
-
+        super();
     }
     //================================================================
-    //metodos para actualizacion dinamica de metadata
+    /*export_meta__keyHadlersOrPathHandlers$()*/
+    //exporta todas las keys handlers o pathhandlers usadas por este meta
+    public export_meta__keyHadlersOrPathHandlers$():string[]{        
+        //aqui TODOS los services en el contenedor de retorno
+        return [            
 
-    //================================================================
+        ];
+    }
+
 }
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*Clases _Meta para campo especiales (map_ y mapA_)*/
 //estas clases no requieren metadata de coleccion
-export class Map_miscelanea_Meta implements IMap_miscelanea<any>{
+export class Map_miscelanea_Meta extends Model_Meta implements IMap_miscelanea<any>{
 
     //================================================================
     /*metadata estatica:*/
@@ -102,17 +111,29 @@ export class Map_miscelanea_Meta implements IMap_miscelanea<any>{
         default: "",
     };
 
+    //metadata utilitaria todas dentro de __Util:
+    __Util = {
+
+    };
+
     //================================================================
     constructor() {
-
+        super();
     }
+    
     //================================================================
-    //metodos para actualizacion dinamica de metadata
+    /*export_meta__keyHadlersOrPathHandlers$()*/
+    //exporta todas las keys handlers o pathhandlers usadas por este meta
+    public export_meta__keyHadlersOrPathHandlers$():string[]{        
+        //aqui TODOS los services en el contenedor de retorno
+        return [            
 
-    //================================================================
+        ];
+    }
 }
 //████████████████████████████████████████████████████████████████
-export class MapA_misc_Meta implements IMapA_misc<any>{
+export class MapA_misc_Meta extends Model_Meta implements IMapA_misc<any>{
+
     //================================================================
     /*metadata estatica:*/
     //metadata referente a coleccion
@@ -122,14 +143,25 @@ export class MapA_misc_Meta implements IMapA_misc<any>{
         default: "blanco"
     };
 
+    //metadata utilitaria todas dentro de __Util:
+    __Util = {
+
+    };
+
     //================================================================
     constructor() {
-
+        super();
     }
-    //================================================================
-    //metodos para actualizacion dinamica de metadata
 
     //================================================================
+    /*export_meta__keyHadlersOrPathHandlers$()*/
+    //exporta todas las keys handlers o pathhandlers usadas por este meta
+    public export_meta__keyHadlersOrPathHandlers$():string[]{        
+        //aqui TODOS los services en el contenedor de retorno
+        return [            
+
+        ];
+    }
 }
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 

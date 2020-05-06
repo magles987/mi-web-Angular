@@ -4,46 +4,114 @@ import { Injectable } from '@angular/core';
 
 import { AngularFirestore, AngularFirestoreCollection, AngularFirestoreDocument } from '@angular/fire/firestore';
 
-import { Observable, observable, Subject, BehaviorSubject, } from 'rxjs';
-import { map, switchMap, } from 'rxjs/operators';
-
 import { IRol, Rol } from '../../../models/firebase/rol/rol';
 import { Rol_Meta } from './rol_Meta';
-import { FSModelService, ETypePaginate, IQFilter,IControl$, IpathControl$, IRunFunSuscribe, IQValue, ETypePaginatePopulate } from '../fs_Model_Service';
+import { IValuesQueryRol, IValuesHooksRol } from '../../IModels-Hooks-Querys/IRol/IRol';
 
-//================================================================================================================================
-/*INTERFACES y ENUMs especiales para cada modelo de service*/
-//Interfaces especiales para implementar contenedores de 
-//objetos utilitarios para los metodos Pre  
-//deben llevar el sufijo   _Modelo   del moedelo para no generar 
-//conflictos con otras colecciones cuando se haga   import
-//Ejemplo: Iv_PreGet{aqui el sufijo de coleccion o subcoleccion}
+import { Fs_ModelService, ETypePaginate, ETypePaginatePopulate, Ifs_Filter, Fs_HooksService } from '../fs_Model_Service';
+import { Fs_Util } from '../fs_Util';
 
-/*Iv_PreGet_{Modelo}*/
-//OPCIONAL el agregar propiedades
-//contiene propiedades externar al modelo (mas especificamente IModelo)
-//para realizar calculos o enriquecer los docs leidos
-//se recomienda crear objetos de esta interfaz en la 
-//propiedad-funcion next de los objetos RFS
-export interface Iv_PreGet_Rol{
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+/*class HooksService[Model]*/
+//contiene tanto los contenedores de valores para administrar los hoooks como los metodos 
+//hooks propiamente dichos para este ModelService
+export class HooksServiceRol extends Fs_HooksService<Rol, Rol_Meta> implements IValuesHooksRol<Rol_Meta>{
+    
+    //================================================
+    //objetos que almacenan los valores para procesar 
+    //los  metodos hooks, se inicializan con valores por default
+    v_preGet = {};
+    v_preMod = {};
+    v_preDelete = {};
+    v_postMod = {};
+    v_postDelete = {};     
+    //================================================
+
+    constructor(
+        public model_Meta: Rol_Meta,
+        public fs_Util: Fs_Util<Rol, Rol_Meta>
+    ) { 
+        super();
+    }
+
+    //================================================================
+    //metodos Hooks de pre y post ()
+    //Si no ejecutan una logica interna simplemente devolver el Doc 
+    //que reciben (en el caso de los pre)
+    public preGetDoc(Doc: Rol): Rol {
+        
+        //determinar si doc existe para poder 
+        //procesarlo de lo contrario devolverlo como null
+        if (!Doc || Doc == null) {
+            return null
+        }
+
+        //determinar si se debe hacer un preGet
+        if (this.fs_Util.isObjNotEmpty(this.v_preGet)) {
+            //aqui la logica de modificacion al doc original
+        }
+       
+        return Doc;
+    }
+    public preModDoc(
+        Doc: Rol, 
+        isCreate: boolean,
+        isStrongUpdate:boolean, 
+        path_EmbBase?: string, 
+    ): Rol {
+        //================================================================
+        //se determina si se desea crear el documento para su configuracion
+        if (isCreate) {
+            //================================================================
+            //se determina si se genera un _id personalizado o si el objeto ya
+            //trae consigo un _id de una fuente externa
+            Doc._id = (Doc._id && typeof Doc._id === 'string' && Doc._id != "") ?
+                Doc._id :
+                this.fs_Util.createIds();
+            
+            //aqui se genera el   _pathDoc   del doc a crear
+            Doc._pathDoc = this.fs_Util.create_pathDoc(Doc._id, path_EmbBase || "");
+            //================================================================
+        }
+
+        //se determina si existen valores de modificacion 
+        if (this.fs_Util.isObjNotEmpty(this.v_preMod)) {
+            //...aqui toda la modificacion y formateo especial previo a guardar
+        }
+
+        //================================================================
+        //aqui se formatean los datos del documento (se quitan campos 
+        //inecesarios (no almacenables))
+        Doc = this.fs_Util.formatearDoc(Doc, this.model_Meta, isStrongUpdate);
+        //================================================================     
+        
+        return Doc; 
+    }
+    public preDeleteDoc(_id:string): string {
+        return _id;
+    }
+    
+
+    public postModDoc(Doc: Rol, isCreate:boolean) {
+        //determinar si fue creado o editado
+        if (isCreate) {
+            //..aqui si fue creado
+        } else {
+            //..aqui si fue creado           
+        }
+        return;
+    }
+    public postDeleteDoc(_id:string) {
+        return;
+    }
+    //================================================================
 
 }
-
-/*Iv_PreMod_{Modelo}*/
-//OPCIONAL el agregar propiedades
-//contiene propiedades externar al modelo (mas especificamente IModelo) 
-//para realizar calculos o enriquecer el doc a modificar (ya sea crear o editar) 
-export interface Iv_PreMod_Rol{
-
-}
-
-/*IQValue_{Modelo}*/
-//OPCIONAL el agregar propiedades
-//contiene propiedades personalizadas para este modelo_util para 
-//construir querys personalizadas y especificas
-export interface IQValue_Rol extends IQValue{
-
-}
+//████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
+/*Ifs_Filter[Model]*/
+//esta interfaz es SOLO referencial para heredar las demas,
+//aqui se podria personalizar valores para la Query unicamente para firestore
+export interface Ifs_FilterRol extends IValuesQueryRol, Ifs_Filter{}
 
 //================================================================================================================================
 /*SERVICE DEL MODELO*/
@@ -63,29 +131,38 @@ export interface IQValue_Rol extends IQValue{
 //SubColecciones: class Emb_ModeloService
 //
 
-export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<IQValue_Rol>> {
+export class RolService extends Fs_ModelService< Rol, Rol_Meta, Ifs_FilterRol> {
 
-    //================================================================
-    //Propiedaes utilitarias
+    //contiene el objeto hook exclusivo para este servicio
+    public hooksModelService: HooksServiceRol
 
-    //================================================================
-    constructor(private _afs: AngularFirestore) {
+    constructor(
+        private _afs: AngularFirestore
+    ) {
         super();
-        //================================================================
-        //cargar la configuracion de la coleccion:
-
+        
         //indispensable dejar una referencia de_afs en la clase padre
         //IMPORTANTE: los servicios (como AngularFirestore) no se pueden 
         //inyectar directamente en la clase padre por problemas con super()
-        super.U_afs = this._afs;
+        this.U_afs = this._afs;
+
+        //la clase padre recibe TODOS los services 
+        //foraaneos que se requieren para este servicio
+        //si no hay servicios foraneos se deja un array vacio
+        this.f_services = [];
         
         //Objeto con metodos y propiedeades de utilidad para el service
         this.Model_Meta = new Rol_Meta();
+        this._Util = new Fs_Util(this.Model_Meta);
+        this.hooksModelService = new HooksServiceRol(this.Model_Meta, this._Util);
+        this.hooksInsideService = this.hooksModelService;
 
         //establece un limite predefinido para este 
         //service (es personalizable incluso se puede 
         //omitir y dejar el de la clase padre)
-        //this.limitePaginaPredefinido = 10;
+        // this.defaultPageLimit=10;
+        // this.defaultLimitPopulate=10
+
         //================================================================
         //--solo para TEST-------------------------------
         this.createDocsTest(false); //Normalmente en false
@@ -201,46 +278,36 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     //solo es necesario recibirlo si por alguna razon se quiere paginar 
     //No teniendo como base los snapshotsDocs sino otra cosa
     public get$(
-        control$:IControl$<Rol>, 
-        QValue: IRol<IQValue_Rol> | null,
-        v_PreGet:Iv_PreGet_Rol = null,
-        path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
-        limit = this.defaultPageLimit,
-        startDoc: any = null,
-    ): IControl$<Rol> {
-
-        //================================================================
-        //configurar QValue por default si se requiere:
-        if (!QValue || QValue == null) {
-            QValue = <IRol<IQValue_Rol>>{_id:{_orden:"asc"}};            
-        }
+        keyHandler:string, 
+        filter:Ifs_FilterRol
+    ):void {
+        //configuracion predeterminada de propiedades de consulta:        
+        filter.order = (filter.order) ? filter.order : <IRol<"asc"|"desc">>{_id:"asc"};
 
         //configurar tipo de paginacion deseada:
-        const typePaginate:number =  ETypePaginate.Full;
-     
-        //================================================================
+        filter.typePaginate =  (filter.typePaginate)? filter.typePaginate : ETypePaginate.Full;
+             
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
-        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query) => {
+        filter.query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, BhFilter:Ifs_FilterRol) => {
 
-            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+            let cursorQueryRef = ref;
             
             //================================================================
             //ordenar, limitar y prepaginar con docInicial
-            cursorQueryRef = cursorQueryRef.orderBy(this.Model_Meta._id.nom, QValue._id._orden || "asc") 
-            cursorQueryRef = cursorQueryRef.limit(limit);
-            if (typePaginate == ETypePaginate.Single || typePaginate == ETypePaginate.Full) {
-                cursorQueryRef = cursorQueryRef.startAfter(startDoc || null);                    
+            cursorQueryRef = cursorQueryRef.orderBy(this.Model_Meta._id.nom, BhFilter.order._id) 
+            cursorQueryRef = cursorQueryRef.limit(BhFilter.limit);
+            if (BhFilter.typePaginate == ETypePaginate.Single || BhFilter.typePaginate == ETypePaginate.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(BhFilter.startDoc);                  
             }            
             //================================================================
 
             return cursorQueryRef;
         };
-        //================================================================
-        //objeto para parametro:
-        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
-        return this.readControl$(control$, QFilter, path_EmbBase);
+
+        this.configHandlerForNewQuery$(keyHandler, filter);
+        return 
 
     }
 
@@ -269,237 +336,104 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     //
     //No requiere ni limite ni docInicial ya que se sobreentiende que devuelve solo 1 doc
     public getId$(
-        control$:IControl$<Rol> | null, 
+        keyHandler:string, 
         _id:string,
-        v_PreGet:Iv_PreGet_Rol = null,
         path_EmbBase:string = null,       
-    ): IControl$<Rol> {
-
-        //================================================================
-        //configurar tipo de paginacion deseada:
-        const typePaginate:number =  ETypePaginate.No;
-  
-        //================================================================
-        //Configurar la query de esta lectura:
-        //esta query es una funcion que se cargará al behavior como filtro 
-        //al momento de que este se ejecute
-        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query) => {
-
-            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
-            //================================================================
-            //Query Condiciones:
-            cursorQueryRef = cursorQueryRef.where(this.Model_Meta._id.nom, "==", _id);            
-            //================================================================
-            //no se requiere paginar            
-            return cursorQueryRef;
-        };
-    
-        //================================================================
-        //objeto para parametro:
-        const QFilter:IQFilter = {query,v_PreGet, startDoc:null, limit:0, typePaginate};
-        return this.readControl$(control$, QFilter, path_EmbBase);
+    ):void {
+        super.getId$(keyHandler, _id, path_EmbBase);
+        return;
     }
 
-    public getPorCodigo$(
-        control$:IControl$<Rol> | null, 
-        QValue: IRol<IQValue_Rol> | null,
-        v_PreGet:Iv_PreGet_Rol = null,
-        path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
-        limit = this.defaultPageLimit,
-        startDoc: any = null,
-    ): IControl$<Rol> {
+    public getMenorCodigos$(
+        keyHandler:string,
+        filter:Ifs_FilterRol,
+    ):void{
 
-        //================================================================
-        //configurar QValue por default si se requiere:
-        if (!QValue || QValue == null) {
-            QValue = <IRol<IQValue_Rol>>{codigo:{_orden:"asc"}}           
-        }
+        //configuracion predeterminada de propiedades de consulta:        
+        filter.order = (filter.order) ? filter.order : <IRol<"asc"|"desc">>{codigo:"asc"};
 
         //configurar tipo de paginacion deseada:
-        const typePaginate:number =  ETypePaginate.Single;
+        filter.typePaginate =  (filter.typePaginate)? filter.typePaginate : ETypePaginate.Single;
 
         //================================================================
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
-        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query) => {
+        filter.query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, BhFilter:Ifs_FilterRol) => {
 
-            let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
+            let cursorQueryRef = ref;
 
             //================================================================
             //determinar los niveles de codigo para cada rol
-            cursorQueryRef = cursorQueryRef.where(this.Model_Meta.codigo.nom, "<=", QValue.codigo.max);
+            cursorQueryRef = cursorQueryRef.where(this.Model_Meta.codigo.nom, "<=", BhFilter.VQ_LtEqNum.codigo);
             //================================================================
             //ordenar, limitar y prepaginar con docInicial
-            cursorQueryRef = cursorQueryRef.orderBy(this.Model_Meta.codigo.nom, QValue.codigo._orden || "asc")
-            cursorQueryRef = cursorQueryRef.limit(limit);
-            if (typePaginate == ETypePaginate.Single || typePaginate == ETypePaginate.Full) {
-                cursorQueryRef = cursorQueryRef.startAfter(startDoc || null);
+            cursorQueryRef = cursorQueryRef.orderBy(this.Model_Meta.codigo.nom, BhFilter.order.codigo)
+            cursorQueryRef = cursorQueryRef.limit(BhFilter.limit);
+            if (BhFilter.typePaginate == ETypePaginate.Single || BhFilter.typePaginate == ETypePaginate.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(BhFilter.startDoc);
             }
             //================================================================
 
             return cursorQueryRef;
         };
 
-        //================================================================
-        //objeto para parametro:
-        const QFilter:IQFilter = {query, v_PreGet, startDoc, limit, typePaginate};
-        return this.readControl$(control$, QFilter, path_EmbBase);
+        this.configHandlerForNewQuery$(keyHandler, filter);
+        return
 
     }
 
     public getByCodigoForUsuario$(
-        control$:IControl$<Rol> | null, 
-        maxCodigo: number,
-        v_PreGet:Iv_PreGet_Rol = null,
-        path_EmbBase:string = null, //Obligatorios para subcolecciones y que NO se desee consulta en collectionGroup
-    ): IControl$<Rol> {
+        keyHandler:string,
+        filter:Ifs_FilterRol,
+    ):void{
 
-        //================================================================
-        //configurar QValue por default:
-        const QValue = <IRol<IQValue_Rol>>{codigo:{_orden:"asc", max:maxCodigo}}      
+        //configuracion predeterminada de propiedades de consulta:        
+        filter.order = (filter.order) ? filter.order : <IRol<"asc"|"desc">>{codigo:"asc"};
 
         //configurar tipo de paginacion deseada:
-        const typePaginate:number =  ETypePaginate.Single;
+        filter.typePaginate =  (filter.typePaginate)? filter.typePaginate : ETypePaginate.Single;
 
         //================================================================
         //Configurar la query de esta lectura:
         //esta query es una funcion que se cargará al behavior como filtro 
         //al momento de que este se ejecute
-        const query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query) => {
+        filter.query = (ref: firebase.firestore.CollectionReference | firebase.firestore.Query, BhFilter:Ifs_FilterRol) => {
 
             let cursorQueryRef: firebase.firestore.CollectionReference | firebase.firestore.Query = ref;
 
             //================================================================
             //determinar los niveles de codigo para cada rol
-            cursorQueryRef = cursorQueryRef.where(this.Model_Meta.codigo.nom, "<=", QValue.codigo.max);
+            cursorQueryRef = cursorQueryRef.where(this.Model_Meta.codigo.nom, "<=", BhFilter.VQ_LtEqNum.codigo);
             //================================================================
             //ordenar, limitar y prepaginar con docInicial
-            cursorQueryRef = cursorQueryRef.orderBy(this.Model_Meta.codigo.nom, QValue.codigo._orden || "asc")
-            cursorQueryRef = cursorQueryRef.limit(this.defaultPageLimit);
-            if (typePaginate == ETypePaginate.Single || typePaginate == ETypePaginate.Full) {
-                cursorQueryRef = cursorQueryRef.startAfter(null);
+            cursorQueryRef = cursorQueryRef.orderBy(this.Model_Meta.codigo.nom, BhFilter.order.codigo)
+            cursorQueryRef = cursorQueryRef.limit(BhFilter.limit);
+            if (BhFilter.typePaginate == ETypePaginate.Single || BhFilter.typePaginate == ETypePaginate.Full) {
+                cursorQueryRef = cursorQueryRef.startAfter(BhFilter.startDoc);
             }
             //================================================================
 
             return cursorQueryRef;
         };
 
-        //================================================================
-        //objeto para parametro:
-        const QFilter:IQFilter = {query, v_PreGet, startDoc:null, limit:this.defaultPageLimit, typePaginate};
-        return this.readControl$(control$, QFilter, path_EmbBase);
-
+        this.configHandlerForNewQuery$(keyHandler, filter);
+        return
     }
 
     //================================================================================================================================
-    /*getBy_pathDoc$()*/
-    //permite consultar un solo doc siempre y cuando se tenga el path_id
-    //Parametros:
-    //doc$:
-    //objeto control$ con toda la informacion de la lectura reactiva (aunque 
-    //puede recibirse  null  si es la primera vez)
-    //
-    //RFS:
-    //objeto con las funciones next() y error() para ejecutar una vez este suscrito
-    //
-    //v_PreGet:
-    //contiene el objeto con valores para customizar y enriquecer los 
-    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
-    //
-    //path_Id:
-    //obligatorio, contiene el la RUTA CON ID del documento a leer, solo por 
-    //primera vez se recibe un null y eso en casos que no se requiera 
-    //inmediatamente obtener dicho doc
-    //
-    public getBy_pathDoc$(
-        pathControl$:IpathControl$<Rol>, 
-        v_PreGet:Iv_PreGet_Rol | null,
-        _pathDoc: string | null
-    ): IpathControl$<Rol> {
+    /*paginate$() @Override*/
+    //Se debe declarar si se necesita implementar 
+    //alguna funcion personalizada
+    
+    /*populate$() @Override*/
+    //Se debe declarar si se necesita implementar 
+    //alguna funcion personalizada
 
-        return this.readPathControl$(pathControl$, v_PreGet, this.preGetDocs, _pathDoc);
-    }
-
-    //================================================================================================================================
-    /*paginate$()*/
-    //este metodo determina y detecta el tipo de paginacion y solicita el
-    //lote de documentos de acuerdo a los parametros
-    //Parametros:
-    //doc$:
-    //objeto control$ con toda la informacion de la lectura reactiva 
-    //(aqui NO PUEDE RECIBIRSE NULL)
-    //
-    //direccionPaginacion:
-    //se debe recibir alguna de las 2 opciones "previo" | "siguiente"
-    //Recordar que no todos los tipos de paginacion aceptan "previo"
-    //
-    public paginate$(
-        control$:IControl$<Rol>, 
-        pageDirection: "previousPage" | "nextPage"
-    ):IControl$<Rol> {
-
-        return this.paginteControl$(control$, pageDirection);
-    }
-
-    //================================================================================================================================
-    /*populate$()*/
-    //permite el poblar documentos refernciado en campos con 
-    //prefijo  fk_  que almacenan rutas _pathDoc de este modelo
-    //este metodo se usa como paso intermedio en caso de desear
-    //personalizarlo exclusivamente para este servicio
-    //
-    //Parametros:
-    //pathControl$:
-    //objeto control$ con la configuracion de observables y subscriciones
-    //que se usen para poblar
-    //
-    //fk_pathDocs:
-    //contiene el o los strings de _pathDoc que hacen referencia a otros documentos
-    //si es es un slo string indica que el campo   fk_  esta relacionado con otra 
-    //coleccion en modo 1a1 o 0a1, si es un array indica que el campo fk_ esta 
-    //relacionado con otra coleccion como  0aMuchos o 1aMuchos 
-    //
-    //v_PreGet:
-    //contiene el objeto con valores para customizar y enriquecer los 
-    //docs obtenidos de la bd y antes de entregarlos a la suscripcion
-    //se pude recibir un null
-    //
-    //limitPopulate:
-    //si se desea un limite personalizado para la paginacion de poblar
-    public populate$(
-        pathControl$: IpathControl$<Rol>,
-        fk_pathDocs: string | string[],
-        v_PreGet:Iv_PreGet_Rol | null = null,        
-        limitPopulate?:number
-    ): IpathControl$<Rol> {
-
-        //conigurar el tipo de paginacion deseada
-        const typePaginate = ETypePaginatePopulate.Single;
-
-        return this.populateControl$(pathControl$, fk_pathDocs, v_PreGet, this.preGetDocs, typePaginate, limitPopulate);
-    }
-
-    /*pagitanePopulate()*/
-    //es para paginacion basica de populate, por ahora solo redirecciona
-    //al metodo principal pagitanePopulateControl$(), aqui se uede implementar
-    //logica personalizada para cada paginacion, si se desea
-    //
-    //Parametros:
-    //pathControl$:
-    //el objeto contrl$ con los observables y suscripciones de cada
-    //populate
-    //
-    //pageDirection
-    // las 2 opciones de direccion de paginar (no en todos los 
-    //typePaginate se pueden usar)
-    public pagitanePopulate(
-        pathControl$:IpathControl$<Rol>,
-        pageDirection: "previousPage" | "nextPage"
-    ):IpathControl$<Rol>{
-
-        return this.pagitanePopulateControl$(pathControl$, pageDirection);
-    }    
+    /*pagitanePopulate() @Override*/
+    //Se debe declarar si se necesita implementar 
+    //alguna funcion personalizada
+    
     //================================================================================================================================    
     /*create*/
     //permite la creacion de un doc en tipo set
@@ -512,24 +446,10 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public create(newDoc: Rol, v_PreMod?:Iv_PreMod_Rol): Promise<void> {
+    public create(newDoc: Rol, path_EmbBase?:string): Promise<void> {
 
-        //================================================================
-        //pre modificacion y formateo del doc
-        newDoc = this.preModDoc(newDoc,true, false, v_PreMod);
-        //================================================================
-        return new Promise<void>((resolve, reject) =>{
-            this.createDocFS(newDoc, this.getPathCollection())
-            .then(()=>{
-                //aqui todo lo de despues de la creacion
-
-                resolve();
-            })
-            .catch((err)=>{
-                console.log(err);
-                reject();
-            });
-        });    }
+        return super.create(newDoc, path_EmbBase); 
+    }
 
     //================================================================
     /*update*/
@@ -548,24 +468,9 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     //objeto opcional para pre configurar 
     //y formatear el doc (decorativos)
     //
-    public update(updatedDoc: Rol, isStrongUpdate = false, v_PreMod?:Iv_PreMod_Rol): Promise<void> {
+    public update(updatedDoc: Rol, isStrongUpdate = false, path_EmbBase?:string): Promise<void> {
 
-        //================================================================
-        //pre modificacion y formateo del doc
-        updatedDoc = this.preModDoc(updatedDoc, false, isStrongUpdate, v_PreMod);
-        //================================================================
-        return new Promise<void>((resolve, reject) =>{
-            this.updateDocFS(updatedDoc, this.getPathCollection())
-            .then(()=>{
-                //aqui todo lo de despues de la actualizacion
-
-                resolve();
-            })
-            .catch((err)=>{
-                console.log(err);
-                reject();
-            });
-        });
+        return super.update(updatedDoc, isStrongUpdate, path_EmbBase);
 
     }
     //================================================================
@@ -576,163 +481,43 @@ export class RolService extends FSModelService< Rol, IRol<any>,  Rol_Meta, IRol<
     //_id:
     //estring con id a eliminar
     //
-    public delete(_id: string): Promise<void> {
+    public delete(_id: string, path_EmbBase?:string): Promise<void> {
 
-        return new Promise<void>((resolve, reject) =>{
-            this.deleteDocFS(_id, this.getPathCollection())
-            .then(()=>{
-                //aqui todo lo de despues de la eliminacion
-
-                resolve();
-            })
-            .catch((err)=>{
-                console.log(err);
-                reject();
-            });
-        });
+        return super.delete(_id, path_EmbBase);
     }
 
-    //================================================================================================================================    
-    /*createControl$()*/
-    public createControl$(
-        RFS:IRunFunSuscribe<Rol>
-    ):IControl$<Rol>{
-        let control$ = this.createPartialControl$(RFS, this.preGetDocs);
 
-        //================================================================
-        //Configurar controls$ extrenos de apoyo para este control$
-        
-        //================================================================
-
-        return control$;
-    }
-    /*createPathControl$()*/
-    public createPathControl$(
-        RFS:IRunFunSuscribe<Rol>
-    ):IpathControl$<Rol>{
-        let control$ = this.createPartialPathControl$(RFS, this.preGetDocs);
-
-        //================================================================
-        //Configurar controls$ extrenos de apoyo para este control$
-        
-        //================================================================
-
-        return control$;
-    }
-
-    //================================================================
-    /*preCrearOActualizar()*/
-    //metodo que debe ejecutarse antes de crear o actualizar un documento
-    //Parametros:
-    //doc
-    //el documento que se desea crear o actualizar
-    //
-    //isCreate:
-    //determina si se desea crear o actualizar
-    //
-    //isStrongUpdate:
-    //cuando se edita un documento se determina su los campos especiales como
-    // map_  y  mapA_  se deben reemplazar completamente
-    //
-    //v_PreMod: 
-    //objeto que contiene datos para enriqueser o realizar operaciones
-    //de acuerdo a la coleccion (determinar si se crea o se actualiza, 
-    //generar _ids y )
-    //
-    //path_EmbBase:
-    //es exclusivo y OBLIGATORIO para subcolecciones, se recibe el pathBase 
-    //para poder modificar el documento de la subcoleccion
-    private preModDoc(
-        doc: Rol,
-        isCreate: boolean = true,
-        isStrongUpdate = false,
-        v_PreMod?: Iv_PreMod_Rol,
-        path_EmbBase?: string,
-    ): Rol {
-
-        //================================================================
-        //se determina si se desea crear el documento para su configuracion
-        if (isCreate) {
-            //================================================================
-            //se determina si se genera un _id personalizado o si el objeto ya
-            //trae consigo un _id de una fuente externa
-            doc._id = (doc._id && typeof doc._id === 'string' && doc._id != "") ?
-                doc._id :
-                this.createIds();
-            
-            //aqui se genera el   _pathDoc   del doc a crear
-            doc._pathDoc = this.create_pathDoc(doc._id, path_EmbBase);
-            //================================================================
-        }
-        if (v_PreMod) {
-            //...aqui toda la modificacion y formateo especial previo a guardar
-        }
-        //================================================================
-        //aqui se formatean los datos del documento (se quitan campos 
-        //inecesarios (no almacenables))
-        doc = this.formatearDoc(doc, this.Model_Meta, isStrongUpdate);
-        //================================================================                               
-        return doc;
-    }
-
-    //================================================================
-    /*preGetDocs()*/
-    //Funcion que debe ejecutarse antes de entregar CADA DOCUMENTO LEIDO 
-    //(documento por documento) en el pipe del observable de lectura
-    //
-    //IMPORTANTE: este metodo se usa tambien como variable-funcion
-    //para ser pasado a la clase padre como parametro
-    //
-    //Parametros:
-    //docs ->  documento o documentos que se leyeron de firebase
-    //v_PreLeer-> objeto que contiene datos para enriqueser o realizar operaciones
-    //          (por ejemplo cargar los campos virtuales) antes de entregar a
-    //          la vista o componente correspondiente
-
-    private preGetDocs(
-        doc:Rol, 
-        v_PreGet?: Iv_PreGet_Rol
-    ):Rol {
-
-        if(v_PreGet && v_PreGet != null){
-            //================================================================
-            //aqui todo lo referente a la modificacion de cada documento antes 
-            //de devolverlo
-            
-            //================================================================
-        }
-        //retornar doc ya customizado y enriquecido
-        return doc;
-    }
     //================================================================
     /*createDocsTest()*/
    // permite crear hasta 10 documentos para hacer pruebas
     private createDocsTest(isActived:boolean){
         if (isActived) {
-            let docs = [
-                this.createModel(),
-                this.createModel(),
-                this.createModel(),
-                this.createModel(),                                                
-            ];
-            
-            docs[0].strCodigo = "invitado";
-            docs[0].codigo = 10**1;
-            docs[1].strCodigo = "empleado";
-            docs[1].codigo = 10**2;     
-            docs[2].strCodigo = "administrador";
-            docs[2].codigo = 10**3; 
-            docs[3].strCodigo = "programador";
-            docs[3].codigo = 10**8;  
-            
-            for (let i = 0; i < docs.length; i++) {
-                this.create(docs[i])
-                .then()
-                .catch((err)=>{
-                    console.log("Error Creando docs de Prueba: \n" + err);
-                });
+
+            //tiempo de espera para que firestore este listo
+            const t = 100;      
+            setTimeout(() => {
+
+                let docsTest :Rol[] = [];
+
+                for (let i = 0; i < 4; i++) {
+                    docsTest[i] = this._Util.createModel();
+                }
                 
-            }
+                docsTest[0].strCodigo = "invitado";
+                docsTest[0].codigo = 10**1;
+
+                docsTest[1].strCodigo = "empleado";
+                docsTest[1].codigo = 10**2;     
+
+                docsTest[2].strCodigo = "administrador";
+                docsTest[2].codigo = 10**3; 
+                
+                docsTest[3].strCodigo = "programador";
+                docsTest[3].codigo = 10**8;  
+
+                this.createDocsTestByTime(docsTest);
+        
+            }, t); 
 
         }
     }

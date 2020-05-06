@@ -10,11 +10,12 @@ import { AuthNoSocial_Meta } from './authNoSocial_Meta';
 import { AuthNoSocial } from 'src/app/models/firebase/auth/authNoSocial';
 
 import { Usuario, IUsuario } from 'src/app/models/firebase/usuario/usuario';
-import { UsuarioService, IQValue_Usuario } from '../usuario/usuario.service';
+import { UsuarioService } from '../usuario/usuario.service';
 import { Rol, IRol } from 'src/app/models/firebase/rol/rol';
-import { RolService, IQValue_Rol } from '../rol/rol.service';
+import { RolService } from '../rol/rol.service';
 
-import { IControl$, IRunFunSuscribe, IpathControl$ } from '../fs_Model_Service';
+import { ServiceHandler$, IRunFunSuscribe } from '../../ServiceHandler$';
+import { Fs_ModelService } from '../fs_Model_Service';
 
 
 //================================================================================================================================
@@ -26,14 +27,6 @@ export enum ETipoAuth {
     google = "google",
 }
 
-export interface IAuthControl$ {
-    observable: Observable<firebase.User>;
-    suscription: Subscription;
-
-    authInfo: firebase.User | null;
-
-
-}
 //================================================================================================================================
 
 @Injectable()
@@ -41,19 +34,16 @@ export class AuthService {
 
     public Model_Meta: AuthNoSocial_Meta;
 
-    public Auth$: IAuthControl$;
+    public Auth$: ServiceHandler$<firebase.User>;
 
-    //contenedor de objetos control$ de services externos
-    //a este service 
-    private Controls_ext$: IControl$<unknown>[] = [];
-    private pathControls_ext$: IpathControl$<unknown>[] = [];
-
-    private UsuarioActual$: IControl$<Usuario>;
-    private pathRolActual$: IpathControl$<Rol>;
+    private keyUsuarioActual$: string;
+    private keyPathRolActual$: string;
 
     public CurrentUsuario:Usuario | null;
     public CurrentRol:Rol | null;
-    public uid:string | null;
+
+    private authInfo : firebase.User | null;
+    public uid :string | null;
 
     constructor(
         private afAuth: AngularFireAuth,
@@ -63,62 +53,61 @@ export class AuthService {
 
         this.Model_Meta = new AuthNoSocial_Meta();
 
-        this.Auth$ = {
-            observable: null,
-            suscription: null,
-            authInfo: null,
-        }
+        this.rebootService();
 
-        //crear los control$ externos:
-        this.UsuarioActual$ = this._UsuarioService.createControl$(this.RFS_UsuarioActual);
-        this.pathRolActual$ = this._RolService.createPathControl$(this.RFS_RolActual);
-
-        //crear observable de autenticacion y suscribirse
-        this.Auth$.observable = this.afAuth.authState;
-        this.Auth$.suscription = this.Auth$.observable.subscribe(this.RFS_Auth);
-
-        this.CurrentUsuario = this._UsuarioService.createModel();
-        this.CurrentRol = this._RolService.createModel();
     }
 
+    //================================================================
+    /*rebootService()*/
+    //rearma la configuracion del servicio, en un eventual 
+    //caso que se necesite reiniciar
+    public rebootService():void{
+        //configurar el handler$ de autentificacion
+        this.Auth$ = new ServiceHandler$<firebase.User>();
+        this.Auth$.setObservable(this.afAuth.authState);
+        this.Auth$.addSubscribe("auth-Start", this.RFS_Auth);
+
+        //crear los handlers$ externos:
+        this.keyUsuarioActual$ = this._UsuarioService.createHandler$(this.RFS_UsuarioActual, "Handler", "Service");
+        this.keyPathRolActual$ = this._RolService.createHandler$(this.RFS_RolActual, "PathHandler", "Service");
+
+        this.CurrentUsuario = this._UsuarioService._Util.createModel();
+        this.CurrentRol = this._RolService._Util.createModel();
+    }
+
+    //================================================================
+    //propiedades RFS a usar
     private RFS_Auth:IRunFunSuscribe<firebase.User> = {
         next:(info)=>{
 
             //se asume que solo existe un usuario autenticado:            
-            this.Auth$.authInfo = (Array.isArray(info)) ? info[0] : info;
-            this.uid = (info && info != null) ? this.Auth$.authInfo.uid : null;
+            this.authInfo = (Array.isArray(info)) ? info[0] : info;
+            this.uid = (info && info != null) ? this.authInfo.uid : null;
 
             if (this.uid != null) {
-                
-                this._UsuarioService.ready()
-                .then(()=>{
-                    this.UsuarioActual$ = this._UsuarioService.getUsuarioActualByAuthId(this.UsuarioActual$, this.uid, null);
-                })
-                .catch((err) => { console.log(err) })
+                this._UsuarioService.getUsuarioActualByAuthId(this.keyUsuarioActual$, this.uid, null);
             }else{
-                this.CurrentUsuario = this._UsuarioService.createModel();
-                this.CurrentRol = this._RolService.createModel();
-                this._UsuarioService.setMeta_fk_rol();
+                this.CurrentUsuario = this._UsuarioService._Util.createModel();
+                this.CurrentRol = this._RolService._Util.createModel();
+                this._UsuarioService.Model_Meta.update_fk_rol();
             }            
         },
         error:(err) => { console.log(err) }
     };
 
-    private RFS_UsuarioActual:IRunFunSuscribe<Usuario> = {
-        next:(uActual:Usuario[]) => {
+    private RFS_UsuarioActual:IRunFunSuscribe<Usuario[]> = {
+        next:(uActual) => {
             if (Array.isArray(uActual) && uActual.length > 0) {
 
                 this.CurrentUsuario = uActual[0];
-                this._UsuarioService.setMeta_fk_rol(this.CurrentUsuario.fk_rol);
-                this._RolService.ready()
-                .then(() => {
-                    this.pathRolActual$ = this._RolService.populate$(this.pathRolActual$, this.CurrentUsuario.fk_rol);
-                })
-                .catch((error)=>{ console.log(error)});         
+                this._UsuarioService.Model_Meta.update_fk_rol(this.CurrentUsuario.fk_rol);
+
+                this._RolService.populate$(this.keyPathRolActual$, this.CurrentUsuario.fk_rol);         
+            
             }else{
-                this.CurrentUsuario = this._UsuarioService.createModel();
-                this.CurrentRol = this._RolService.createModel();
-                this._UsuarioService.setMeta_fk_rol();
+                this.CurrentUsuario = this._UsuarioService._Util.createModel();
+                this.CurrentRol = this._RolService._Util.createModel();
+                this._UsuarioService.Model_Meta.update_fk_rol();
             }
         },
         error:(error)=>{ console.log(error)}
@@ -126,16 +115,23 @@ export class AuthService {
 
     private RFS_RolActual:IRunFunSuscribe<Rol> = {
         next:(rol:Rol) => {
-            this.CurrentRol = rol;
+            if (rol && rol != null) {
+                this.CurrentRol = rol;
+            } else {
+                this.CurrentRol = this._RolService._Util.createModel();
+            }
+            
         },
         error:(error)=>{ console.log(error)}
     }
+    //================================================================
+
 
     public signUpNoSocial2(authCredential: AuthNoSocial): Promise<void> {
         return new Promise<void>((resolve, reject) => {
             this.afAuth.auth.createUserWithEmailAndPassword(authCredential.email, authCredential.pass)
                 .then((credencial) => {
-                    let usuario = this._UsuarioService.createModel();
+                    let usuario = this._UsuarioService._Util.createModel();
                     // se usa _id de fuente externa
                     usuario._id = credencial.user.uid;
                     this._UsuarioService.create(usuario)
@@ -182,5 +178,17 @@ export class AuthService {
 
     public logout(): Promise<void> {
         return this.afAuth.auth.signOut();
+    }
+
+    //================================================================
+    /*closeHanlers$()*/
+    //
+    public closeHanlers$():void{
+        
+        this.Auth$.closeAllHandlers$([this.Auth$]);
+
+        this._UsuarioService.closeHandlersOrPathHandlers$([this.keyUsuarioActual$]);
+        this._RolService.closeHandlersOrPathHandlers$([this.keyPathRolActual$]);
+        return;
     }
 }
