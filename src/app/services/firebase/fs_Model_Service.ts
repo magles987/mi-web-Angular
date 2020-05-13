@@ -196,9 +196,14 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
     protected hooksInsideService:Fs_HooksService<TModel, TModel_Meta>;
 
     //================================================================
+
     //Flag que determina cuando esta listo el servicio para
     //realizar operaciones CRUD
     protected isServiceReady:Boolean;
+
+    //flag que determina si se estan 
+    //haciendo pruebas con emulador local de firestore
+    private isLocalFS:boolean;
 
     //almacena un limite de docs leidos estandar para TODAS LAS QUERYS,
     protected defaultPageLimit:number;
@@ -227,6 +232,10 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
         this.SMapPathHandlers$ = new Map<string, Fs_MServicePathHandler$<TModel>>();
 
         this.f_keyHandlersOrPathhandlers$ = [];
+
+        //Solo para test local debe estar en true:
+        this.isLocalFS = false;
+
     }
 
     //================================================================================================================================    
@@ -330,98 +339,127 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
             return Promise.resolve();
              
         } else {
-            return new Promise<void>((resolve, reject)=>{
 
-                //concatena TODO lo referente a handlers foraneos 
-                //o de metadata que se esten usando para este ModelService
-                const meta = <Model_Meta><unknown>this.Model_Meta;
-                this.f_keyHandlersOrPathhandlers$ = this.f_keyHandlersOrPathhandlers$.concat(meta.export_meta__keyHadlersOrPathHandlers$());            
+            //determinar si se esta usando prubas locales 
+            //para no detectar  la habilitacion de la persistencia
 
-                //determinar si existen Handlers$ foraneos que monitorear
-                //de lo contrario no crear ningun observable combinado
-                if (this.f_keyHandlersOrPathhandlers$.length > 0 && this.f_services.length > 0) {
+            if (this.isLocalFS == false) {
+                //determina si la persistencia del 
+                //servidor de Firestore esta habilitada
+                return this.U_afs.persistenceEnabled$.toPromise()
+                .then(() => {
+                    return this.configCustomStateReady();
+                })                
+            } else {
+                
+                //si esta en modo de pruebas locales no se debe 
+                //hacer comprobacion de persistencia habilitada
+                
+                this.U_afs.firestore.settings({
+                    host: "localhost:9090",
+                    ssl:false
+                });
 
-                    //contenedor generico para combinar observables
-                    let obss:Observable<unknown>[]=[];
-
-                    for (let i = 0; i < this.f_services.length; i++) {
-
-                        const f_mapH = this.f_services[i].SMapHandlers$;
-                        const f_mapPH = this.f_services[i].SMapPathHandlers$;
-
-                        for (let j = 0; j < this.f_keyHandlersOrPathhandlers$.length; j++) {
-                        
-                            let obs:Observable<unknown>;
-                            
-                            //analizar el tipo de handler y si existe en alguno de los mapas
-                            if (
-                                this.isTypeHandler(this.f_keyHandlersOrPathhandlers$[j], "Handler") &&
-                                f_mapH.has(this.f_keyHandlersOrPathhandlers$[j])
-                            ) {    
-                                // se obtiene el handler foraneo correspondiente y se agrega al map 
-                                //diccionario, tambien se obtiene el mergeAll de los obserbales que
-                                //tenga internos dicho handler  
-                                const h$ = f_mapH.get(this.f_keyHandlersOrPathhandlers$[j]);
-                                this.SMapHandlers$.set(this.f_keyHandlersOrPathhandlers$[j], h$);
-                                obs = h$.getObservableMergeAll(); 
-
-                            }
-                            if (
-                                this.isTypeHandler(this.f_keyHandlersOrPathhandlers$[j], "PathHandler") &&
-                                f_mapPH.has(this.f_keyHandlersOrPathhandlers$[j])
-                            ) {
-                                // se obtiene el pathHandler foraneo correspondiente y se agrega al map 
-                                //diccionario, tambien se obtiene el mergeAll de los obserbales que
-                                //tenga internos dicho pathHandler  
-                                const ph$ = f_mapPH.get(this.f_keyHandlersOrPathhandlers$[j]);
-                                this.SMapPathHandlers$.set(this.f_keyHandlersOrPathhandlers$[j], ph$);
-                                obs = ph$.getObservableMergeAll(); 
-
-                            }
-                            
-                            //almacenar en el contenedor el obs obtenido si existe:
-                            if (obs && obs != null) {
-                                obss.push(obs);    
-                            }                                                
-                        }                        
-                        
-                    }
-
-                    //combinar y suscribirse para saber cuando se 
-                    //ejecutaron TODOS los observables de los handler$_ext
-                    // por primera vez (no se tiene en cuenta cuando se 
-                    //crearon cada handler$ ya que en ese momento se 
-                    //devuelve un empty() como observable, que no es 
-                    //detectado por este combineLastest()  )
-                    let f_subsCombine = combineLatest(obss)                    
-                    .subscribe({
-                        next:(d)=>{
-                            //se desuscribe al momento justo de detectar que 
-                            //ya no hay mas handler$_ext que monitorear por primera vez
-                            f_subsCombine.unsubscribe(); 
-
-                            this.isServiceReady = true;                    
-                            resolve();
-                        },
-                        error:(FSerr)=>{
-                            reject(FSerr);
-                        },
-                    });
-
-                } else {
-                    //tiempo de espera a que el modulo de firestore este listo          
-                    const t = 10;
-                    setTimeout(() => {
-                        //si no hay controls$ externos 
-                        //no se puede hacer un monitoreo
-                        this.isServiceReady = true;
-                        resolve();                    
-                    }, t);                                  
-                }
-            });
+                return this.configCustomStateReady();
+            }
         }
     }
     
+    /*configCustomStateReady()*/
+    //metodo intermedio para configura el estado de 
+    //ready del servicio FS 
+    private configCustomStateReady():Promise<void>{
+        return new Promise<void>((resolve, reject)=>{
+
+            //concatena TODO lo referente a handlers foraneos 
+            //o de metadata que se esten usando para este ModelService
+            const meta = <Model_Meta><unknown>this.Model_Meta;
+            this.f_keyHandlersOrPathhandlers$ = this.f_keyHandlersOrPathhandlers$.concat(meta.export_meta__keyHadlersOrPathHandlers$());            
+
+            //determinar si existen Handlers$ foraneos que monitorear
+            //de lo contrario no crear ningun observable combinado
+            if (this.f_keyHandlersOrPathhandlers$.length > 0 && this.f_services.length > 0) {
+
+                //contenedor generico para combinar observables
+                let obss:Observable<unknown>[]=[];
+
+                for (let i = 0; i < this.f_services.length; i++) {
+
+                    const f_mapH = this.f_services[i].SMapHandlers$;
+                    const f_mapPH = this.f_services[i].SMapPathHandlers$;
+
+                    for (let j = 0; j < this.f_keyHandlersOrPathhandlers$.length; j++) {
+                    
+                        let obs:Observable<unknown>;
+                        
+                        //analizar el tipo de handler y si existe en alguno de los mapas
+                        if (
+                            this.isTypeHandler(this.f_keyHandlersOrPathhandlers$[j], "Handler") &&
+                            f_mapH.has(this.f_keyHandlersOrPathhandlers$[j])
+                        ) {    
+                            // se obtiene el handler foraneo correspondiente y se agrega al map 
+                            //diccionario, tambien se obtiene el mergeAll de los obserbales que
+                            //tenga internos dicho handler  
+                            const h$ = f_mapH.get(this.f_keyHandlersOrPathhandlers$[j]);
+                            this.SMapHandlers$.set(this.f_keyHandlersOrPathhandlers$[j], h$);
+                            obs = h$.getObservableMergeAll(); 
+
+                        }
+                        if (
+                            this.isTypeHandler(this.f_keyHandlersOrPathhandlers$[j], "PathHandler") &&
+                            f_mapPH.has(this.f_keyHandlersOrPathhandlers$[j])
+                        ) {
+                            // se obtiene el pathHandler foraneo correspondiente y se agrega al map 
+                            //diccionario, tambien se obtiene el mergeAll de los obserbales que
+                            //tenga internos dicho pathHandler  
+                            const ph$ = f_mapPH.get(this.f_keyHandlersOrPathhandlers$[j]);
+                            this.SMapPathHandlers$.set(this.f_keyHandlersOrPathhandlers$[j], ph$);
+                            obs = ph$.getObservableMergeAll(); 
+
+                        }
+                        
+                        //almacenar en el contenedor el obs obtenido si existe:
+                        if (obs && obs != null) {
+                            obss.push(obs);    
+                        }                                                
+                    }                        
+                    
+                }
+
+                //combinar y suscribirse para saber cuando se 
+                //ejecutaron TODOS los observables de los handler$_ext
+                // por primera vez (no se tiene en cuenta cuando se 
+                //crearon cada handler$ ya que en ese momento se 
+                //devuelve un empty() como observable, que no es 
+                //detectado por este combineLastest()  )
+                let f_subsCombine = combineLatest(obss)                    
+                .subscribe({
+                    next:(d)=>{
+                        //se desuscribe al momento justo de detectar que 
+                        //ya no hay mas handler$_ext que monitorear por primera vez
+                        f_subsCombine.unsubscribe(); 
+
+                        this.isServiceReady = true;                    
+                        resolve();
+                    },
+                    error:(FSerr)=>{
+                        reject(FSerr);
+                    },
+                });
+
+            } else {
+                //tiempo de espera a que el modulo de firestore este listo          
+                const t = 10;
+                setTimeout(() => {
+                    //si no hay controls$ externos 
+                    //no se puede hacer un monitoreo
+                    this.isServiceReady = true;
+                    resolve();                    
+                }, t);                                  
+            }
+        });
+    }
+
     //================================================================================================================================
     /*METODOS DE LECTURA GENERICA:*/
     //================================================================
@@ -1267,10 +1305,14 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
         return this.ready()
         // .then(() => {
         //     //espera por modificaciones pendientes
-        //     return this.U_afs.firestore.waitForPendingWrites();
-        // })
+        //     return refColletion.ref.firestore.waitForPendingWrites();
+        // }) 
         .then(() => {    
+            //la opcion de { merge: true } le indica al metodo set que 
+            //cree el documento pero si este ya fue creado, actualice solo 
+            //los campos que han tenido modificacion
             return refColletion.doc(_id).set(newDoc, { merge: true });
+
         })        
         .then(() => {
             //ejecutar el postMod (si existe)
