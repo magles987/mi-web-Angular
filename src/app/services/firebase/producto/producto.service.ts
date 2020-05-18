@@ -152,13 +152,19 @@ export class ProductoService extends Fs_ModelService< Producto, Producto_Meta, I
         //la clase padre recibe TODOS los services 
         //foraaneos que se requieren para este servicio
         //si no hay servicios foraneos se deja un array vacio
-        this.f_services = [];
+        this.f_services = [
+            //...aqui TODOS los services foraneos a necesitar
+        ];
 
         //Objeto con metodos y propiedeades de utilidad para el service
         this.Model_Meta = new Producto_Meta();
         this._Util = new Fs_Util(this.Model_Meta);
         this.hooksModelService = new HooksServiceProducto(this.Model_Meta, this._Util)
         this.hooksInsideService = this.hooksModelService;
+
+        //actualizar de forma asincrona (si se requiere) los 
+        //metadatos del modelo
+        this.updateModelMeta();
 
         //establece un limite predefinido para este 
         //service (es personalizable incluso se puede 
@@ -171,6 +177,7 @@ export class ProductoService extends Fs_ModelService< Producto, Producto_Meta, I
         this.createDocsTest(false); //Normalmente en false
         //-----------------------------------------------        
     }
+
     //================================================================================================================================
     /*Consideraciones de lecturas*/
     //
@@ -641,6 +648,19 @@ export class ProductoService extends Fs_ModelService< Producto, Producto_Meta, I
         return super.delete(_id, path_EmbBase);
     }
 
+    //================================================================
+    /*updateModelMeta()*/
+    //actualiza (si se requiere) los metadatos del modelo
+    //cada campo fk_ del modelo deberá tener un metodo para 
+    //actualizar los metadatos de dicho campo
+    private updateModelMeta():void{
+
+        //aqui los metodos de cada campo fk_ que 
+        //requiera actualizar los metadata
+        
+        return;
+    }
+    
     //================================================================
     /*createDocsTest()*/  
     // permite crear hasta 10 documentos para hacer pruebas

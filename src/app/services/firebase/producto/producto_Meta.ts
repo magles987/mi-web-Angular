@@ -78,15 +78,7 @@ export class Producto_Meta extends Model_Meta implements IProducto<any>, IMetaCo
     constructor() {
         super();
     }
-    //================================================================
-    /*export_meta__keyHadlersOrPathHandlers$()*/
-    //exporta todas las keys handlers o pathhandlers usadas por este meta
-    public export_meta__keyHadlersOrPathHandlers$():string[]{        
-        //aqui TODOS los services en el contenedor de retorno
-        return [            
 
-        ];
-    }
 
 }
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
@@ -121,15 +113,6 @@ export class Map_miscelanea_Meta extends Model_Meta implements IMap_miscelanea<a
         super();
     }
     
-    //================================================================
-    /*export_meta__keyHadlersOrPathHandlers$()*/
-    //exporta todas las keys handlers o pathhandlers usadas por este meta
-    public export_meta__keyHadlersOrPathHandlers$():string[]{        
-        //aqui TODOS los services en el contenedor de retorno
-        return [            
-
-        ];
-    }
 }
 //████████████████████████████████████████████████████████████████
 export class MapA_misc_Meta extends Model_Meta implements IMapA_misc<any>{
@@ -153,15 +136,6 @@ export class MapA_misc_Meta extends Model_Meta implements IMapA_misc<any>{
         super();
     }
 
-    //================================================================
-    /*export_meta__keyHadlersOrPathHandlers$()*/
-    //exporta todas las keys handlers o pathhandlers usadas por este meta
-    public export_meta__keyHadlersOrPathHandlers$():string[]{        
-        //aqui TODOS los services en el contenedor de retorno
-        return [            
-
-        ];
-    }
 }
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 

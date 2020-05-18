@@ -157,6 +157,10 @@ export class RolService extends Fs_ModelService< Rol, Rol_Meta, Ifs_FilterRol> {
         this.hooksModelService = new HooksServiceRol(this.Model_Meta, this._Util);
         this.hooksInsideService = this.hooksModelService;
 
+        //actualizar de forma asincrona (si se requiere) los 
+        //metadatos del modelo
+        this.updateModelMeta();
+
         //establece un limite predefinido para este 
         //service (es personalizable incluso se puede 
         //omitir y dejar el de la clase padre)
@@ -486,6 +490,18 @@ export class RolService extends Fs_ModelService< Rol, Rol_Meta, Ifs_FilterRol> {
         return super.delete(_id, path_EmbBase);
     }
 
+    //================================================================
+    /*updateModelMeta()*/
+    //actualiza (si se requiere) los metadatos del modelo
+    //cada campo fk_ del modelo deberá tener un metodo para 
+    //actualizar los metadatos de dicho campo
+    private updateModelMeta():void{
+
+        //aqui los metodos de cada campo fk_ que 
+        //requiera actualizar los metadata
+        
+        return;
+    }
 
     //================================================================
     /*createDocsTest()*/

@@ -70,8 +70,6 @@ export class Rol_Meta extends Model_Meta implements IRol<any>, IMetaColeccion {
         isRolCreaRol:true
     };
 
-    //keyHandlers$ foraneos:  
-
     //================================================================
     constructor(
         
@@ -80,17 +78,6 @@ export class Rol_Meta extends Model_Meta implements IRol<any>, IMetaColeccion {
         //potencia para codigo de rol por default
         this.codigo.default = this.codigo.default ** this.__Util.baseCodigo;
     }
-
-    //================================================================
-    /*export_meta__keyHadlersOrPathHandlers$()*/
-    //exporta todas las keys handlers o pathhandlers usadas por este meta
-    public export_meta__keyHadlersOrPathHandlers$():string[]{        
-        //aqui TODOS los services en el contenedor de retorno
-        return [            
-
-        ];
-    }
-
 
 }
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████

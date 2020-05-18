@@ -231,6 +231,7 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
         this.SMapHandlers$ = new Map<string, Fs_MServiceHandler$<TModel, Ifs_FilterModel>>();
         this.SMapPathHandlers$ = new Map<string, Fs_MServicePathHandler$<TModel>>();
 
+        this.f_services = [];
         this.f_keyHandlersOrPathhandlers$ = [];
 
         //Solo para test local debe estar en true:
@@ -257,7 +258,7 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
     public createHandler$(        
         RFS:IRunFunSuscribe<TModel[]> | IRunFunSuscribe<TModel>,
         keyHandlerType:"Handler" | "PathHandler",
-        sourceType:"Service" | "Component" | "Metadata" | "innerService" | "unknown"  
+        sourceType:"Service" | "Component" | "foreingService" | "innerService" | "unknown"  
     ):string{    
 
         //construir la keyHandler con la que se identificará el handler$ 
@@ -351,7 +352,7 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
                     return this.configCustomStateReady();
                 })                
             } else {
-                
+
                 //si esta en modo de pruebas locales no se debe 
                 //hacer comprobacion de persistencia habilitada
                 
@@ -370,11 +371,6 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
     //ready del servicio FS 
     private configCustomStateReady():Promise<void>{
         return new Promise<void>((resolve, reject)=>{
-
-            //concatena TODO lo referente a handlers foraneos 
-            //o de metadata que se esten usando para este ModelService
-            const meta = <Model_Meta><unknown>this.Model_Meta;
-            this.f_keyHandlersOrPathhandlers$ = this.f_keyHandlersOrPathhandlers$.concat(meta.export_meta__keyHadlersOrPathHandlers$());            
 
             //determinar si existen Handlers$ foraneos que monitorear
             //de lo contrario no crear ningun observable combinado

@@ -8,13 +8,14 @@ import { IUsuario, Usuario } from '../../../models/firebase/usuario/usuario';
 import { Usuario_Meta } from './usuario_Meta';
 import { IValuesQueryUsuario, IValuesHooksUsuario } from '../../IModels-Hooks-Querys/IUsuario/IUsuario';
 
-import { Fs_ModelService, ETypePaginate, ETypePaginatePopulate, Ifs_Filter, Fs_HooksService } from '../fs_Model_Service';
+import { IRunFunSuscribe } from '../../ServiceHandler$';
+import { Fs_ModelService, ETypePaginate, Ifs_Filter, Fs_HooksService } from '../fs_Model_Service';
 import { Fs_Util } from '../fs_Util';
 
 
 //controls y modelos externos
-
-import { RolService } from '../rol/rol.service';
+import { RolService, Ifs_FilterRol } from '../rol/rol.service';
+import { Rol } from 'src/app/models/firebase/rol/rol';
 
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*class HooksService[Model]*/
@@ -155,15 +156,22 @@ export class UsuarioService extends Fs_ModelService<Usuario, Usuario_Meta, Ifs_F
         //la clase padre recibe TODOS los services 
         //foraaneos que se requieren para este servicio
         //si no hay servicios foraneos se deja un array vacio
-        this.f_services = [this._rolService];
+        this.f_services = [
+            //...aqui TODOS los services foraneos a necesitar
+            this._rolService
+        ];
 
         //cargar la configuracion de la coleccion:
         
         //Objeto con metodos y propiedeades de utilidad para el service
-        this.Model_Meta = new Usuario_Meta(this._rolService);
+        this.Model_Meta = new Usuario_Meta();
         this._Util = new Fs_Util(this.Model_Meta);
         this.hooksModelService = new HooksServiceUsuario(this.Model_Meta, this._Util);
         this.hooksInsideService = this.hooksModelService;
+
+        //actualizar de forma asincrona (si se requiere) los 
+        //metadatos del modelo
+        this.updateModelMeta();
 
         //establece un limite predefinido para este 
         //service (es personalizable incluso se puede 
@@ -523,6 +531,104 @@ export class UsuarioService extends Fs_ModelService<Usuario, Usuario_Meta, Ifs_F
         return super.delete(_id, path_EmbBase);
     }
 
+    //================================================================
+    /*updateModelMeta()*/
+    //actualiza (si se requiere) los metadatos del modelo
+    //cada campo fk_ del modelo deberá tener un metodo para 
+    //actualizar los metadatos de dicho campo
+    private updateModelMeta():void{
+
+        this.updateMeta_fk_Rol();
+
+        return;
+    }
+    
+    /*updateMeta_fk_Rol()*/
+    //
+    //Parametros:
+    //
+    private f_keyRolHandler:string;
+    private f_keyRolPathHandler:string;
+    public updateMeta_fk_Rol(pathRol?:string):void{
+
+        const baseCodigo =  this._rolService.Model_Meta.__Util.baseCodigo;
+        const isRolCreateRol = this._rolService.Model_Meta.__Util.isRolCreaRol;
+
+        let QValue:Ifs_FilterRol = {
+            VQ_LtEqNum : {codigo : baseCodigo}
+        };
+
+        //crear handlers y declarar RFSs
+        if (!this.f_keyRolHandler || this.f_keyRolHandler == null) {
+            //Funcion de tipo rfs_fk_[campo] que permite
+            //actualizar dinamicamente la metadata para este campo 
+            const rfs_fk_rol:IRunFunSuscribe<Rol[]> = {
+                next:(roles)=>{
+                    if (roles && Array.isArray(roles) && roles.length > 0) {
+
+                        //almacena el index del doc que tiene el codigo mas alto
+                        let idxCodMax:number = 0;
+
+                        //actualiza todos los meta referente a seleccion multiple
+                        this.Model_Meta.fk_rol.selectList = [];
+
+                        roles.forEach((doc, idx) => {
+
+                            //buscar el indx del codigo mayor
+                            idxCodMax = (idxCodMax <= doc.codigo) ? 
+                                            idx : idxCodMax;
+
+                            this.Model_Meta.fk_rol.selectList.push(doc._pathDoc);
+
+                            //identifica cual es el default para el campo fk_rol    
+                            if (doc.codigo <= baseCodigo) {
+                                this.Model_Meta.fk_rol.default = doc._pathDoc;
+                            }
+                        });
+                        
+                        //determina si se debe quitar de las lista de opciones la 
+                        //posibilidad de que un rol cree roles de su mismo nivel
+                        if (isRolCreateRol == false) {
+                            //elimina la opcion
+                            this.Model_Meta.fk_rol.selectList.splice(idxCodMax, 1);
+                        }
+                    }
+                },
+                error:(err)=>{console.log(err)}
+            }
+            //crear handler$
+            this.f_keyRolHandler = this._rolService.createHandler$(rfs_fk_rol, "Handler", "foreingService");
+            this.f_keyHandlersOrPathhandlers$.push(this.f_keyRolHandler);
+        }
+
+        if (!this.f_keyRolPathHandler || this.f_keyRolPathHandler == null){
+
+            const rfs_pathRol = <IRunFunSuscribe<Rol>>{
+                next:(rol:Rol)=>{
+                    if (rol != null) {
+                        QValue.VQ_LtEqNum.codigo = rol.codigo;
+                        this._rolService.getByCodigoForUsuario$(this.f_keyRolHandler, QValue);     
+                    }else{
+                        QValue.VQ_LtEqNum.codigo = baseCodigo;
+                        this._rolService.getByCodigoForUsuario$(this.f_keyRolHandler, QValue);      
+                    }
+                },
+                error:(err)=>{console.log(err)}
+            };
+            this.f_keyRolPathHandler = this._rolService.createHandler$(rfs_pathRol, "PathHandler", "foreingService");
+            this.f_keyHandlersOrPathhandlers$.push(this.f_keyRolPathHandler);
+        }
+            
+        //determinar que consulta realizar
+        if (!pathRol || pathRol == null)  {
+            this._rolService.getByCodigoForUsuario$(this.f_keyRolHandler, QValue);         
+        }else{
+            this._rolService.getBy_pathDoc$(this.f_keyRolPathHandler, pathRol);
+        }  
+    
+        return;
+    }
+    
     //================================================================
     /*createDocsTest()*/  
     // permite crear hasta 10 documentos para hacer pruebas

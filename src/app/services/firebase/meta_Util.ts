@@ -162,13 +162,9 @@ export abstract class Model_Meta{
 
     abstract __Util:any; 
 
-    private service
-
     constructor(){
     }
 
-    //entrega los handlers internos usados en metadata
-    public abstract export_meta__keyHadlersOrPathHandlers$?():string[];   
-
+ 
 }
 

@@ -142,7 +142,7 @@ export class emb_subColeccionService extends Fs_ModelService<emb_SubColeccion,em
         private _afs: AngularFirestore
     ) {
         super();
-        //================================================================
+
         //cargar la configuracion de la coleccion
 
         //indispensable dejar una referencia de_afs en la clase padre
@@ -154,8 +154,11 @@ export class emb_subColeccionService extends Fs_ModelService<emb_SubColeccion,em
         this.Model_Meta = new emb_SubColeccion_Meta();
         this._Util = new Fs_Util(this.Model_Meta);
         this.hooksModelService = new HooksServiceEmb_SubColeccion(this.Model_Meta, this._Util);
-
         this.hooksInsideService = this.hooksModelService;
+
+        //actualizar de forma asincrona (si se requiere) los 
+        //metadatos del modelo
+        this.updateModelMeta();        
 
         //establece un limite predefinido para este 
         //service (es personalizable incluso se puede 
@@ -428,6 +431,19 @@ export class emb_subColeccionService extends Fs_ModelService<emb_SubColeccion,em
     public delete(_id: string, path_EmbBase:string): Promise<void> {
 
         return super.delete(_id, path_EmbBase);
+    }
+
+    //================================================================
+    /*updateModelMeta()*/
+    //actualiza (si se requiere) los metadatos del modelo
+    //cada campo fk_ del modelo deberá tener un metodo para 
+    //actualizar los metadatos de dicho campo
+    private updateModelMeta():void{
+
+        //aqui los metodos de cada campo fk_ que 
+        //requiera actualizar los metadata
+        
+        return;
     }
 
     //================================================================

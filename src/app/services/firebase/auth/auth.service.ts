@@ -89,7 +89,7 @@ export class AuthService {
             }else{
                 this.CurrentUsuario = this._UsuarioService._Util.createModel();
                 this.CurrentRol = this._RolService._Util.createModel();
-                this._UsuarioService.Model_Meta.update_fk_rol();
+                this._UsuarioService.updateMeta_fk_Rol();
             }            
         },
         error:(err) => { console.log(err) }
@@ -100,14 +100,14 @@ export class AuthService {
             if (Array.isArray(uActual) && uActual.length > 0) {
 
                 this.CurrentUsuario = uActual[0];
-                this._UsuarioService.Model_Meta.update_fk_rol(this.CurrentUsuario.fk_rol);
+                this._UsuarioService.updateMeta_fk_Rol(this.CurrentUsuario.fk_rol);
 
                 this._RolService.populate$(this.keyPathRolActual$, this.CurrentUsuario.fk_rol);         
             
             }else{
                 this.CurrentUsuario = this._UsuarioService._Util.createModel();
                 this.CurrentRol = this._RolService._Util.createModel();
-                this._UsuarioService.Model_Meta.update_fk_rol();
+                this._UsuarioService.updateMeta_fk_Rol();
             }
         },
         error:(error)=>{ console.log(error)}

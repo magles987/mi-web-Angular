@@ -51,16 +51,6 @@ export class emb_SubColeccion_Meta extends Model_Meta implements Iemb_SubColecci
     constructor() {
         super();
     }
-    
-    //================================================================
-    /*get_meta_KeyHandlers()*/
-    //se debe devolder TODOS los keyHandlers foraneos usados en este meta
-    public export_meta__keyHadlersOrPathHandlers$():string[]{        
-        //aqui todos los handlers que se usen en este meta
-        return [            
-            
-        ];
-    }
 
 }
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
