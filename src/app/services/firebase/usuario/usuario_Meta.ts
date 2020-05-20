@@ -1,12 +1,6 @@
 import { IUsuario, Usuario } from '../../../models/firebase/usuario/usuario';
 import { IMetaColeccion, IMetaCampo, nomsColecciones, Model_Meta } from '../meta_Util';
 
-import { Fs_ModelService } from '../fs_Model_Service';
-
-import { Rol } from 'src/app/models/firebase/rol/rol';
-import { RolService, Ifs_FilterRol } from '../rol/rol.service';
-import { IRunFunSuscribe } from '../../ServiceHandler$';
-
 
 //████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
 /*{Modelo}_Meta*/
