@@ -235,7 +235,7 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
         this.f_keyHandlersOrPathhandlers$ = [];
 
         //Solo para test local debe estar en true:
-        this.isLocalFS = false;
+        this.isLocalFS = true;
 
     }
 

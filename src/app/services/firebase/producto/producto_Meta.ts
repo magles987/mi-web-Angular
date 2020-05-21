@@ -72,8 +72,6 @@ export class Producto_Meta extends Model_Meta implements IProducto<any>, IMetaCo
 
     };
 
-    //keyHandlers$ foraneos:  
-
     //================================================================
     constructor() {
         super();
