@@ -12,7 +12,7 @@ import { firebase_secretCredentials } from "./secret_credentials";
 
 export const environment = {
   production: false,
-  firebase : firebase_secretCredentials.dev
+  firebase : firebase_secretCredentials.dev,
   // {
   //   apiKey: "XXXXXXXXXXXXXXXXXXXXXX",
   //   authDomain: "XXXXXXXXXXX.firebaseapp.com",
@@ -22,6 +22,11 @@ export const environment = {
   //   messagingSenderId: "XXXXXXXXXXXXXXX",
   //   appId: "1:XXXXXXXXXXXXXXX:web:XXXXXXXXXXXXXXXXX"
   // }
+
+  //determina si Firestore se esta consultando 
+  //desde el emulador local
+  emuleFirestoreLocal: false 
+
 };
 
 /*

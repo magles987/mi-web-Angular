@@ -347,10 +347,11 @@ export class Fs_ModelService<TModel, TModel_Meta, Ifs_FilterModel> {
             if (this.isLocalFS == false) {
                 //determina si la persistencia del 
                 //servidor de Firestore esta habilitada
-                return this.U_afs.persistenceEnabled$.toPromise()
-                .then(() => {
-                    return this.configCustomStateReady();
-                })                
+                return this.configCustomStateReady();
+                // return this.U_afs.persistenceEnabled$.toPromise()
+                // .then(() => {
+                //     return this.configCustomStateReady();
+                // })                
             } else {
 
                 //si esta en modo de pruebas locales no se debe 

@@ -94,15 +94,15 @@ export class ProductosComponent implements OnInit, OnDestroy {
       error:(error)=>{ console.log(error)}
     };
 
-    //this._ProductoService.get$( this.keyProducto$, {limit:5, typePaginate:ETypePaginate.Accumulative});
-    const keyPathP = this._ProductoService.createHandler$(rfsP, "PathHandler", "Component");
-    this._ProductoService.populate$(keyPathP, dataP, ETypePaginatePopulate.Full);
-    setTimeout(() => {
-      this._ProductoService.pagitanePopulate$(keyPathP, "nextPage");      
-      setTimeout(() => {
-        this._ProductoService.pagitanePopulate$(keyPathP, "previousPage");
-      }, 10000);
-    }, 10000);
+    this._ProductoService.get$( this.keyProducto$, {limit:5, typePaginate:ETypePaginate.Accumulative});
+    // const keyPathP = this._ProductoService.createHandler$(rfsP, "PathHandler", "Component");
+    // this._ProductoService.populate$(keyPathP, dataP, ETypePaginatePopulate.Full);
+    // setTimeout(() => {
+    //   this._ProductoService.pagitanePopulate$(keyPathP, "nextPage");      
+    //   setTimeout(() => {
+    //     this._ProductoService.pagitanePopulate$(keyPathP, "previousPage");
+    //   }, 10000);
+    // }, 10000);
 
     //________________________________________________________________
 
