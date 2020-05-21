@@ -174,7 +174,7 @@ export class ProductoService extends Fs_ModelService< Producto, Producto_Meta, I
         
 
         //--solo para TEST-------------------------------
-        this.createDocsTest(false); //Normalmente en false
+        this.createDocsTest(true); //Normalmente en false
         //-----------------------------------------------        
     }
 
